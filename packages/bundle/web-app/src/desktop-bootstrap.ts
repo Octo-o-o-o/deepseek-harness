@@ -5,7 +5,7 @@
 
 import { timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { hasValidDesktopToken } from '@deepseek-ai/dsh-client-connection/src/api-request-trust.ts'
+import { hasValidDesktopToken } from '@deepseek-ai/dsh-client-connection'
 
 /** Index global holding the one-time bootstrap nonce. */
 export const DESKTOP_BOOTSTRAP_MARK = '__DSH_DESKTOP_BOOTSTRAP__'

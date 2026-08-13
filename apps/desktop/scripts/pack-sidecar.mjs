@@ -8,9 +8,10 @@
 
 import { createHash } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
-import { mkdir, readFile, rm, chmod, cp, readdir, lstat, symlink } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdir, readFile, writeFile, rm, chmod, cp, readdir, lstat, readlink, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
@@ -106,89 +107,60 @@ function hostTriple() {
   throw new Error(`unsupported pack host ${key}`)
 }
 
+/**
+ * Assemble the payload from the repository's official release tarballs plus
+ * an offline npm install. pnpm deploy keeps vendor packages as workspace
+ * symlinks and an absolute-link .pnpm zoo, both of which break inside an app
+ * bundle; npm's flat install carries every package as real directories.
+ */
 async function deployApp() {
   await rm(appDir, { recursive: true, force: true })
   await mkdir(distDir, { recursive: true })
-  await run('pnpm', ['--filter', '@deepseek-ai/dsh', 'deploy', '--prod', '--legacy', appDir])
+  const packRoot = join(sidecarRoot, 'pack')
+  await rm(packRoot, { recursive: true, force: true })
+  const packEnv = { ...process.env, CI: 'true' }
+  const tsx = join(repoRoot, 'node_modules/.bin/tsx')
+  for (const family of ['vendor', 'dsh']) {
+    await run(tsx, ['scripts/release/pack.ts', '--family', family, '--out', join(packRoot, family)], { env: packEnv })
+  }
+  const deps = {}
+  for (const family of ['vendor', 'dsh']) {
+    for (const filename of await readdir(join(packRoot, family))) {
+      if (!filename.endsWith('.tgz')) continue
+      const tarball = join(packRoot, family, filename)
+      const manifest = JSON.parse((await capture('tar', ['-xOf', tarball, 'package/package.json'])).stdout)
+      deps[manifest.name] = 'file:' + tarball
+    }
+  }
+  const consumer = join(sidecarRoot, 'consumer')
+  await rm(consumer, { recursive: true, force: true })
+  await mkdir(consumer, { recursive: true })
+  await writeFile(
+    join(consumer, 'package.json'),
+    JSON.stringify({ name: 'dshd-sidecar', version: '0.0.0', private: true, dependencies: deps }, null, 2) + '\n',
+  )
+  // Optional dependencies stay: koffi and the native prebuild families load from them.
+  await run('npm', ['install', '--no-audit', '--no-fund', '--package-lock=false'], { cwd: consumer, env: packEnv })
   const required = [
-    join(appDir, 'lib/bin.js'),
-    join(appDir, 'node_modules/@deepseek-ai/dsh-web-app/package.json'),
-    join(appDir, 'node_modules/@deepseek-ai/dsh-base/package.json'),
+    join(consumer, 'node_modules/@deepseek-ai/dsh/lib/bin.js'),
+    join(consumer, 'node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html'),
+    join(consumer, 'node_modules/@deepseek-ai/dsh-web-app/package.json'),
+    join(consumer, 'node_modules/@deepseek-ai/dsh-base/package.json'),
   ]
   for (const path of required) {
     try {
       await readFile(path)
     } catch {
-      throw new Error(`deploy missing ${path}`)
+      throw new Error('deploy missing ' + path)
     }
   }
-  const frontend = await capture(process.execPath, ['-e', `
-    const { createRequire } = require('node:module')
-    const { dirname } = require('node:path')
-    const webApp = dirname(require.resolve('@deepseek-ai/dsh-web-app/package.json'))
-    console.log(createRequire(webApp + '/package.json').resolve('@deepseek-ai/dsh-web-frontend/dist/index.html'))
-  `], { cwd: appDir })
-  if (frontend.code !== 0 || !frontend.stdout.includes('index.html')) {
-    throw new Error(`deploy cannot resolve frontend dist: ${frontend.stderr}`)
-  }
-  await hoistPnpmStore(appDir)
+  await cp(join(consumer, 'node_modules'), join(appDir, 'node_modules'), { recursive: true })
+  // Lay the CLI package contents at the payload root: the shell expects app/lib/bin.js.
+  await cp(join(consumer, 'node_modules/@deepseek-ai/dsh'), appDir, { recursive: true })
+  await stripAbsoluteSymlinks(join(appDir, 'node_modules'))
+  await rm(consumer, { recursive: true, force: true })
 }
 
-/**
- * Symlink every package in the isolated `.pnpm` store into `node_modules`
- * so ESM parent-walk from a realpathed package can see peer Service
- * Definitions that `pnpm deploy --prod` did not hoist.
- * @param {string} deployedApp
- */
-async function hoistPnpmStore(deployedApp) {
-  const pnpmDir = join(deployedApp, 'node_modules/.pnpm')
-  const rootNm = join(deployedApp, 'node_modules')
-  let entries
-  try {
-    entries = await readdir(pnpmDir, { withFileTypes: true })
-  } catch {
-    throw new Error(`deploy missing isolated store ${pnpmDir}`)
-  }
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue
-    await hoistNodeModules(join(pnpmDir, entry.name, 'node_modules'), rootNm)
-  }
-}
-
-/**
- * @param {string} fromNm
- * @param {string} rootNm
- */
-async function hoistNodeModules(fromNm, rootNm) {
-  let names
-  try {
-    names = await readdir(fromNm, { withFileTypes: true })
-  } catch {
-    return
-  }
-  for (const item of names) {
-    if (item.name.startsWith('.')) continue
-    const src = join(fromNm, item.name)
-    if (item.name.startsWith('@')) {
-      await hoistNodeModules(src, join(rootNm, item.name))
-      continue
-    }
-    const dest = join(rootNm, item.name)
-    if (await pathExists(dest)) continue
-    await mkdir(dirname(dest), { recursive: true })
-    try {
-      await symlink(src, dest)
-    } catch (error) {
-      if (error && typeof error === 'object' && 'code' in error && error.code === 'EEXIST') continue
-      throw error
-    }
-  }
-}
-
-/**
- * @param {string} path
- * @returns {Promise<boolean>}
- */
 async function pathExists(path) {
   try {
     await lstat(path)
@@ -340,12 +312,69 @@ async function embedIntoApp() {
   await mkdir(destRoot, { recursive: true })
   await run('cp', ['-a', binDir, destBin])
   await run('cp', ['-a', appDir, destApp])
+  await relativizeSymlinks(destApp)
+  await relativizeSymlinks(appDir)
+  await stripAbsoluteSymlinks(join(destApp, 'node_modules'))
   const node = join(destBin, 'node')
   const binJs = join(destApp, 'lib/bin.js')
   const boot = join(destApp, 'node_modules/@deepseek-ai/dsh-app-boot/package.json')
   for (const path of [node, binJs, boot]) {
     if (!(await pathExists(path))) throw new Error(`embed missing ${path}`)
   }
+}
+
+/**
+ * Rewrite absolute symlinks under `dir` into relative targets inside `dir`.
+ * pnpm's deployed tree carries absolute links; Gatekeeper rejects absolute
+ * symlinks inside an app bundle, so the embedded payload must be relativized
+ * before signing. Non-absolute links and links pointing outside `dir` are
+ * left untouched.
+ */
+/**
+ * Remove symlinks with absolute targets. npm writes absolute .bin shims when
+ * dependencies are file: URLs; Gatekeeper rejects absolute symlinks inside an
+ * app bundle, and dsh web never invokes npm bins, so the shims are dead weight.
+ */
+async function stripAbsoluteSymlinks(dir) {
+  let removed = 0
+  const walk = async (current) => {
+    for (const entry of await readdir(current, { withFileTypes: true })) {
+      const path = join(current, entry.name)
+      if (entry.isDirectory()) {
+        await walk(path)
+        continue
+      }
+      if (!entry.isSymbolicLink()) continue
+      const target = await readlink(path)
+NaN
+      await rm(path)
+      removed += 1
+    }
+  }
+  await walk(dir)
+  if (removed > 0) console.log('pack-sidecar: stripped ' + removed + ' absolute symlink(s)')
+}
+
+async function relativizeSymlinks(dir) {
+  const root = resolve(dir)
+  let fixed = 0
+  const walk = async (current) => {
+    for (const entry of await readdir(current, { withFileTypes: true })) {
+      const path = join(current, entry.name)
+      if (entry.isDirectory()) {
+        await walk(path)
+        continue
+      }
+      if (!entry.isSymbolicLink()) continue
+      const target = await readlink(path)
+      if (!target.startsWith('/') || !target.startsWith(root) || !existsSync(target)) continue
+      await rm(path)
+      await symlink(relative(dirname(path), target), path)
+      fixed += 1
+    }
+  }
+  await walk(root)
+  if (fixed > 0) console.log(`pack-sidecar: relativized ${fixed} symlink(s) under ${dir}`)
 }
 
 const step = process.argv[2] ?? 'all'
