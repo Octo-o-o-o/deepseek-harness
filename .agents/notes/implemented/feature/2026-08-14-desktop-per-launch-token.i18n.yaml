@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-14-desktop-per-launch-token.md
+2026-08-14-desktop-per-launch-token.md: c6a484024293e1ad625eebdf39c5452782d91d40
+2026-08-14-desktop-per-launch-token.zh.md: 76f8e3ea286a5349199d975a33b1289e267dbb2b
