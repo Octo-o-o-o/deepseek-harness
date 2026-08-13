@@ -8,6 +8,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::env::apply_sidecar_env;
 use crate::overlay::assert_safe_sidecar_args;
 use crate::process::{shutdown_tree, ChildTree};
 use crate::ready::{wait_for_ready_line, ReadyError};
@@ -99,9 +100,7 @@ pub fn spawn_sidecar(spec: &SidecarSpec) -> Result<SpawnedSidecar, SidecarError>
         .current_dir(&spec.cwd)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    for (key, value) in &spec.env {
-        command.env(key, value);
-    }
+    apply_sidecar_env(&mut command, &spec.env);
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;

@@ -3,6 +3,7 @@
 //! Tauri is a thin host. Sidecar spawn, ready-line parsing, health checks,
 //! process-tree shutdown, and bind safety live in injectable modules.
 
+mod env;
 mod health;
 mod http;
 #[cfg(windows)]
