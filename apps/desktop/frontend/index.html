@@ -31,8 +31,17 @@
         openLogs.hidden = false
       }
 
+      window.__DSH_SHOW_MIGRATION__ = (message) => {
+        stage.dataset.state = 'migration'
+        status.textContent = 'Imported existing CLI data into the desktop home.'
+        detail.hidden = false
+        detail.textContent = String(message)
+      }
+
       openLogs.addEventListener('click', () => {
-        window.__DSH_OPEN_LOGS__ && window.__DSH_OPEN_LOGS__()
+        const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke
+        if (invoke) invoke('open_log_directory')
+        if (window.__DSH_OPEN_LOGS__) window.__DSH_OPEN_LOGS__()
       })
     </script>
   </body>

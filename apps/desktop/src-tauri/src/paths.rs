@@ -27,6 +27,14 @@ pub fn default_dsh_home() -> PathBuf {
     platform_dsh_home()
 }
 
+/// User home directory (`HOME` / `USERPROFILE`).
+///
+/// # Returns
+/// The process home, or `.` when neither env is set.
+pub fn user_home_dir() -> PathBuf {
+    home_dir()
+}
+
 #[cfg(target_os = "macos")]
 fn platform_dsh_home() -> PathBuf {
     home_dir().join("Library/Application Support/DeepSeekHarness")
@@ -79,6 +87,26 @@ pub fn default_workspace_cwd(home: &Path) -> PathBuf {
     } else {
         home_dir()
     }
+}
+
+/// Persist the sidecar workspace when `desktop-state.json` is missing.
+///
+/// # Parameters
+/// - `home`: desktop `DSH_HOME`.
+/// - `workspace`: directory chosen as the sidecar cwd.
+///
+/// # Returns
+/// `Ok(())` after writing or when the file already exists.
+pub fn ensure_desktop_state(home: &Path, workspace: &Path) -> std::io::Result<()> {
+    let path = home.join("desktop-state.json");
+    if path.is_file() {
+        return Ok(());
+    }
+    let body = serde_json::json!({ "workspace": workspace });
+    std::fs::write(
+        path,
+        serde_json::to_vec_pretty(&body).map_err(std::io::Error::other)?,
+    )
 }
 
 /// Locate `node`: `DSH_NODE_PATH`, bundled runtime, then PATH.
@@ -263,6 +291,18 @@ mod tests {
         fs::create_dir_all(&nested).unwrap();
         assert_eq!(find_repo_root(&nested), Some(root.clone()));
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn writes_desktop_state_once() {
+        let home = temp_dir();
+        let workspace = PathBuf::from("/tmp/dsh-workspace");
+        ensure_desktop_state(&home, &workspace).unwrap();
+        ensure_desktop_state(&home, Path::new("/tmp/other")).unwrap();
+        let text = fs::read_to_string(home.join("desktop-state.json")).unwrap();
+        assert!(text.contains("/tmp/dsh-workspace"));
+        assert!(!text.contains("/tmp/other"));
+        let _ = fs::remove_dir_all(home);
     }
 
     #[test]

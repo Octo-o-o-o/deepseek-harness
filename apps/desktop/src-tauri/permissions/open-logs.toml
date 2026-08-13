@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-open-log-directory"
+description = "Open the desktop log directory in the host file manager."
+commands.allow = ["open_log_directory"]
