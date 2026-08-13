@@ -28,10 +28,16 @@ export interface WebStartupValues {
   /** Explicit `--trusted-host` authorities, in argument order. */
   trustedHosts: string[]
   /**
-   * `--desktop-token`, absent when the invocation did not name one or named
-   * the empty string. Empty means the /api fence stays unauthenticated.
+   * Per-launch desktop token from `DSH_DESKTOP_TOKEN`. Absent when the
+   * process did not set the paired desktop env, so `/api` stays the
+   * unauthenticated CLI default.
    */
   desktopToken?: string
+  /**
+   * One-time bootstrap nonce from `DSH_DESKTOP_BOOTSTRAP_NONCE`. Present
+   * only together with {@link WebStartupValues.desktopToken}.
+   */
+  desktopBootstrapNonce?: string
 }
 
 /** The web flag family, as commander parsed it. */
@@ -39,7 +45,6 @@ interface WebOptions {
   host?: string
   port?: string
   trustedHost?: string[]
-  desktopToken?: string
 }
 
 /**
@@ -54,12 +59,34 @@ function webCommand(): Command {
     .option('--host <host>', 'bind host')
     .option('--port <port>', 'listen port; pass 0 to let the OS pick a free one')
     .option('--trusted-host <authority...>', 'extra authority the /api browser-trust fence accepts (host or host:port; repeatable)')
-    .option('--desktop-token <tok>', 'per-launch token the /api fence requires when set; omit for the unauthenticated CLI default')
     .addHelpText('after', `
 Examples:
   dsh --profile web                          serve on the composed host and port
   dsh --profile web --port 8080              serve on another port
 `)
+}
+
+/**
+ * Read the paired desktop auth env. Either both names are non-empty or both
+ * are absent; a lone variable is a load-time misconfiguration.
+ *
+ * @param env - process env, injectable in tests.
+ * @returns the token and nonce, or an empty object for the CLI default.
+ */
+export function readDesktopAuthEnv(
+  env: NodeJS.ProcessEnv = process.env,
+): Pick<WebStartupValues, 'desktopToken' | 'desktopBootstrapNonce'> {
+  const token = env.DSH_DESKTOP_TOKEN
+  const nonce = env.DSH_DESKTOP_BOOTSTRAP_NONCE
+  const hasToken = token !== undefined && token !== ''
+  const hasNonce = nonce !== undefined && nonce !== ''
+  if (hasToken !== hasNonce) {
+    throw new Error(
+      'web-startup: DSH_DESKTOP_TOKEN and DSH_DESKTOP_BOOTSTRAP_NONCE must both be set or both be absent',
+    )
+  }
+  if (!hasToken) return {}
+  return { desktopToken: token, desktopBootstrapNonce: nonce }
 }
 
 /**
@@ -70,6 +97,7 @@ Examples:
  * @param ctx - plugin context carrying the command line.
  */
 export function apply(ctx: Context): void {
+  const desktop = readDesktopAuthEnv()
   const program = webCommand()
   program.action(() => {
     const options = program.opts<WebOptions>()
@@ -82,7 +110,7 @@ export function apply(ctx: Context): void {
     ctx.provide(WEB_STARTUP_SERVICE, {
       ...options.host !== undefined && { host: options.host },
       ...options.port !== undefined && { port: Number(options.port) },
-      ...options.desktopToken !== undefined && options.desktopToken !== '' && { desktopToken: options.desktopToken },
+      ...desktop,
       trustedHosts: options.trustedHost ?? [],
     } satisfies WebStartupValues)
   })

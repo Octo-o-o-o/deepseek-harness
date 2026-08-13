@@ -65,7 +65,7 @@ pub enum SidecarError {
 ///
 /// # Parameters
 /// - `bin_js`: absolute path to `apps/cli/lib/bin.js`.
-/// - `extra`: additional flags such as `--desktop-token` (Stage B).
+/// - `extra`: extra argv after the pinned loopback flags (secrets go in env, not here).
 ///
 /// # Returns
 /// Argv after the `node` program.

@@ -161,7 +161,7 @@
         # A deployment adding authorities keeps this expression and concatenates
         # its literals, for example: ['app.internal', ...ctx.webRuntime.trustedHosts].
         trustedHosts: !!js ctx.webRuntime.trustedHosts
-        # Empty unless `dsh web --desktop-token` named one; then /api requires it.
+        # Empty unless the desktop shell set DSH_DESKTOP_TOKEN; then /api requires it.
         desktopToken: !!js ctx.webStartup.desktopToken ?? ''
 
     - id: api-remotes

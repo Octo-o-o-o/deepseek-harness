@@ -171,7 +171,12 @@ fn boot_and_navigate(
     let workspace = default_workspace_cwd(&home);
     ensure_desktop_state(&home, &workspace).map_err(|err| err.to_string())?;
     let token = generate_desktop_token().map_err(|err| err.to_string())?;
-    let mut env = vec![("DSH_HOME".into(), home.to_string_lossy().into_owned())];
+    let nonce = generate_desktop_token().map_err(|err| err.to_string())?;
+    let mut env = vec![
+        ("DSH_HOME".into(), home.to_string_lossy().into_owned()),
+        ("DSH_DESKTOP_TOKEN".into(), token.clone()),
+        ("DSH_DESKTOP_BOOTSTRAP_NONCE".into(), nonce),
+    ];
     if let Some(node_modules) = bin
         .parent()
         .and_then(|lib| lib.parent())
@@ -186,7 +191,7 @@ fn boot_and_navigate(
     }
     let spec = SidecarSpec {
         program: node,
-        args: desktop_web_args(&bin, &["--desktop-token".into(), token.clone()]),
+        args: desktop_web_args(&bin, &[]),
         cwd: workspace,
         env,
         log_path: home.join("logs/sidecar.log"),

@@ -12,7 +12,7 @@ import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import { internals, provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import { afterEach, describe, expect, it } from 'vitest'
-import { apply, WEB_STARTUP_SERVICE, type WebStartupValues } from '../src/startup.ts'
+import { apply, readDesktopAuthEnv, WEB_STARTUP_SERVICE, type WebStartupValues } from '../src/startup.ts'
 
 /** What one fixture boot observed. */
 interface Observed {
@@ -22,6 +22,13 @@ interface Observed {
 }
 
 const disposers: (() => Promise<void>)[] = []
+
+function restoreDesktopAuthEnv(token: string | undefined, nonce: string | undefined): void {
+  if (token === undefined) delete process.env.DSH_DESKTOP_TOKEN
+  else process.env.DSH_DESKTOP_TOKEN = token
+  if (nonce === undefined) delete process.env.DSH_DESKTOP_BOOTSTRAP_NONCE
+  else process.env.DSH_DESKTOP_BOOTSTRAP_NONCE = nonce
+}
 
 afterEach(async () => {
   for (const dispose of disposers.splice(0)) await dispose()
@@ -102,12 +109,35 @@ describe('web command-line provider', () => {
     expect(observed.exits).toEqual([])
   })
 
-  it('publishes --desktop-token only when the invocation names a non-empty value', async () => {
-    const named = await bootProvider(['--desktop-token', 'abc'])
-    expect(named.values).toEqual({ trustedHosts: [], desktopToken: 'abc' })
-    const empty = await bootProvider(['--desktop-token', ''])
-    expect(empty.values).toEqual({ trustedHosts: [] })
-    expect(empty.values?.desktopToken).toBeUndefined()
+  it('publishes paired desktop auth env onto the service', async () => {
+    const previousToken = process.env.DSH_DESKTOP_TOKEN
+    const previousNonce = process.env.DSH_DESKTOP_BOOTSTRAP_NONCE
+    process.env.DSH_DESKTOP_TOKEN = 'abc'
+    process.env.DSH_DESKTOP_BOOTSTRAP_NONCE = 'nonce'
+    try {
+      const named = await bootProvider([])
+      expect(named.values).toEqual({
+        trustedHosts: [],
+        desktopToken: 'abc',
+        desktopBootstrapNonce: 'nonce',
+      })
+    } finally {
+      restoreDesktopAuthEnv(previousToken, previousNonce)
+    }
+  })
+
+  it('rejects --desktop-token because secrets must not travel on argv', async () => {
+    const { values, observed } = await bootProvider(['--desktop-token', 'abc'])
+    expect(values).toBeUndefined()
+    expect(observed.exits).toEqual([1])
+    expect(observed.out).toContain('unknown option')
+  })
+
+  it('requires both desktop auth env names or neither', () => {
+    expect(readDesktopAuthEnv({})).toEqual({})
+    expect(readDesktopAuthEnv({ DSH_DESKTOP_TOKEN: '', DSH_DESKTOP_BOOTSTRAP_NONCE: '' })).toEqual({})
+    expect(() => readDesktopAuthEnv({ DSH_DESKTOP_TOKEN: 'abc' })).toThrow(/both be set or both be absent/)
+    expect(() => readDesktopAuthEnv({ DSH_DESKTOP_BOOTSTRAP_NONCE: 'nonce' })).toThrow(/both be set or both be absent/)
   })
 
   it('leaves deployment values to each consumer when flags omit them', async () => {
