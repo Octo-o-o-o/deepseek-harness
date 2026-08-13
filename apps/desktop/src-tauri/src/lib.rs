@@ -27,7 +27,7 @@ use std::time::Duration;
 
 use tauri::Manager;
 
-use crate::health::{check_host_described, check_loader_ready};
+use crate::health::{check_host_described, check_loader_ready, check_websockets_ready};
 use crate::lock::{try_lock_home, HomeLock};
 use crate::logs::{install_panic_hook, open_logs_dir, rotate_sidecar_log};
 use crate::migrate::{
@@ -224,6 +224,18 @@ fn boot_and_navigate(
         );
         return Err(err.to_string());
     }
+    phase = transition(phase, BootEvent::HostDescribed);
+    if let Err(err) = check_websockets_ready(port, &token) {
+        state.request_stop();
+        let _ = transition(
+            phase,
+            BootEvent::Failed {
+                reason: err.to_string(),
+            },
+        );
+        return Err(err.to_string());
+    }
+    phase = transition(phase, BootEvent::WsReady);
     if let Err(err) = navigate_to_sidecar(window, port) {
         state.request_stop();
         return Err(err);
@@ -265,8 +277,17 @@ fn show_error(window: &tauri::WebviewWindow, message: &str) {
 
 fn navigate_to_sidecar(window: &tauri::WebviewWindow, port: u16) -> Result<(), String> {
     let url = format!("http://127.0.0.1:{port}/");
-    let encoded = serde_json::to_string(&url).map_err(|err| err.to_string())?;
-    window
-        .eval(format!("window.location.replace({encoded})"))
-        .map_err(|err| err.to_string())
+    let parsed = tauri::Url::parse(&url).map_err(|err| err.to_string())?;
+    window.navigate(parsed).map_err(|err| err.to_string())?;
+    let expected = url.trim_end_matches('/');
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    while std::time::Instant::now() < deadline {
+        if let Ok(current) = window.url() {
+            if current.as_str().starts_with(expected) {
+                return Ok(());
+            }
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    Err("webview navigation did not finish".into())
 }

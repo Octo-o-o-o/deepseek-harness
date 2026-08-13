@@ -78,6 +78,50 @@ pub fn check_host_described(port: u16, token: &str) -> Result<(), HealthError> {
     Ok(())
 }
 
+const MUX_EVENTS_PATH: &str = "/api/events.mux";
+const HOST_EVENTS_PATH: &str = "/api/events.host";
+
+/// Upgrade both downlink WebSockets with the desktop token cookie.
+///
+/// # Parameters
+/// - `port`: sidecar loopback port.
+/// - `token`: per-launch token; sent only as `dsh-token`.
+///
+/// # Returns
+/// `Ok(())` when both upgrades return HTTP 101.
+pub fn check_websockets_ready(port: u16, token: &str) -> Result<(), HealthError> {
+    for path in [MUX_EVENTS_PATH, HOST_EVENTS_PATH] {
+        let response = websocket_upgrade(port, path, token)?;
+        if response.status != 101 {
+            return Err(HealthError::BadStatus(response.status));
+        }
+    }
+    Ok(())
+}
+
+fn websocket_upgrade(
+    port: u16,
+    path: &str,
+    token: &str,
+) -> Result<crate::http::HttpResponse, HealthError> {
+    let cookie = format!("dsh-token={token}");
+    Ok(http_request(
+        "GET",
+        "127.0.0.1",
+        port,
+        path,
+        &[
+            ("Connection", "Upgrade"),
+            ("Upgrade", "websocket"),
+            ("Sec-WebSocket-Version", "13"),
+            ("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ=="),
+            ("Cookie", cookie.as_str()),
+        ],
+        None,
+        Duration::from_secs(5),
+    )?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -146,5 +190,26 @@ mod tests {
         });
         check_host_described(port, "abc").unwrap();
         assert!(host_describe_body().contains("host.describe"));
+    }
+
+    #[test]
+    fn websocket_upgrade_requires_101() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        thread::spawn(move || {
+            for _ in 0..2 {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut buf = [0_u8; 4096];
+                let n = stream.read(&mut buf).unwrap_or(0);
+                let request = String::from_utf8_lossy(&buf[..n]);
+                assert!(request.contains("Upgrade: websocket"));
+                assert!(request.contains("Cookie: dsh-token=abc"));
+                stream
+                    .write_all(b"HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n")
+                    .unwrap();
+                let _ = stream.shutdown(std::net::Shutdown::Write);
+            }
+        });
+        check_websockets_ready(port, "abc").unwrap();
     }
 }

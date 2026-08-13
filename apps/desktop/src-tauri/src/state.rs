@@ -17,7 +17,17 @@ pub enum BootPhase {
         /// OS-assigned listen port.
         port: u16,
     },
-    /// WebView is showing the sidecar URL.
+    /// `POST /api/host.describe` returned 200.
+    HostDescribed {
+        /// OS-assigned listen port.
+        port: u16,
+    },
+    /// Both downlink WebSockets accepted the upgrade.
+    WsReady {
+        /// OS-assigned listen port.
+        port: u16,
+    },
+    /// WebView finished loading the sidecar URL.
     Visible {
         /// OS-assigned listen port.
         port: u16,
@@ -41,6 +51,10 @@ pub enum BootEvent {
     },
     /// Index health check succeeded.
     LoaderReady,
+    /// Host describe handshake succeeded.
+    HostDescribed,
+    /// Mux and host WebSocket upgrades succeeded.
+    WsReady,
     /// WebView navigation completed.
     Visible,
     /// Any step failed.
@@ -66,7 +80,11 @@ pub fn transition(phase: BootPhase, event: BootEvent) -> BootPhase {
         (BootPhase::Idle, BootEvent::SpawnOk) => BootPhase::Spawned,
         (BootPhase::Spawned, BootEvent::Bound { port }) => BootPhase::Bound { port },
         (BootPhase::Bound { port }, BootEvent::LoaderReady) => BootPhase::LoaderReady { port },
-        (BootPhase::LoaderReady { port }, BootEvent::Visible) => BootPhase::Visible { port },
+        (BootPhase::LoaderReady { port }, BootEvent::HostDescribed) => {
+            BootPhase::HostDescribed { port }
+        }
+        (BootPhase::HostDescribed { port }, BootEvent::WsReady) => BootPhase::WsReady { port },
+        (BootPhase::WsReady { port }, BootEvent::Visible) => BootPhase::Visible { port },
         (other, _) => BootPhase::Failed {
             reason: format!("illegal boot transition from {other:?}"),
         },
@@ -78,12 +96,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn happy_path_without_host_describe() {
+    fn happy_path_reaches_visible() {
+        let phase = transition(BootPhase::Idle, BootEvent::SpawnOk);
+        let phase = transition(phase, BootEvent::Bound { port: 9 });
+        let phase = transition(phase, BootEvent::LoaderReady);
+        let phase = transition(phase, BootEvent::HostDescribed);
+        let phase = transition(phase, BootEvent::WsReady);
+        let phase = transition(phase, BootEvent::Visible);
+        assert_eq!(phase, BootPhase::Visible { port: 9 });
+    }
+
+    #[test]
+    fn skips_visible_before_websockets() {
         let phase = transition(BootPhase::Idle, BootEvent::SpawnOk);
         let phase = transition(phase, BootEvent::Bound { port: 9 });
         let phase = transition(phase, BootEvent::LoaderReady);
         let phase = transition(phase, BootEvent::Visible);
-        assert_eq!(phase, BootPhase::Visible { port: 9 });
+        assert!(matches!(phase, BootPhase::Failed { .. }));
     }
 
     #[test]
