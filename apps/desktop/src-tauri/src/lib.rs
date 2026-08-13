@@ -13,6 +13,7 @@ mod logs;
 mod migrate;
 mod overlay;
 mod paths;
+mod pid;
 mod process;
 mod ready;
 mod sidecar;
@@ -37,6 +38,7 @@ use crate::migrate::{
 use crate::paths::{
     default_dsh_home, default_workspace_cwd, ensure_desktop_state, resolve_node, resolve_web_bin,
 };
+use crate::pid::{clear_sidecar_pid, reap_stale_sidecar, write_sidecar_pid};
 use crate::sidecar::{desktop_web_args, spawn_sidecar, wait_ready, SidecarSpec};
 use crate::state::{transition, BootEvent, BootPhase};
 use crate::supervisor::SidecarSupervisor;
@@ -47,6 +49,7 @@ use crate::tray::install_tray;
 pub struct AppState {
     supervisor: SidecarSupervisor,
     boot: Mutex<Option<thread::JoinHandle<()>>>,
+    home: Mutex<Option<std::path::PathBuf>>,
     _lock: Mutex<Option<HomeLock>>,
 }
 
@@ -54,6 +57,11 @@ impl AppState {
     /// Unique stop entry: cancel boot, take the sidecar out of the lock, shut it down.
     pub fn request_stop(&self) {
         self.supervisor.request_stop();
+        if let Ok(home) = self.home.lock() {
+            if let Some(home) = home.as_ref() {
+                clear_sidecar_pid(home);
+            }
+        }
     }
 
     fn join_boot(&self) {
@@ -81,6 +89,7 @@ pub fn run() {
         .manage(AppState {
             supervisor: SidecarSupervisor::new(),
             boot: Mutex::new(None),
+            home: Mutex::new(None),
             _lock: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![open_log_directory])
@@ -149,6 +158,11 @@ fn boot_and_navigate(
         let mut guard = state._lock.lock().map_err(|err| err.to_string())?;
         *guard = Some(held);
     }
+    {
+        let mut guard = state.home.lock().map_err(|err| err.to_string())?;
+        *guard = Some(home.clone());
+    }
+    reap_stale_sidecar(&home);
     let report = migrate_legacy_home(&default_legacy_home(), &home, inject_fault_from_env())
         .map_err(|err| err.to_string())?;
     if report.migrated {
@@ -181,6 +195,7 @@ fn boot_and_navigate(
     let spawned = spawn_sidecar(&spec).map_err(|err| err.to_string())?;
     phase = transition(phase, BootEvent::SpawnOk);
     let (process, ready) = spawned.into_parts();
+    write_sidecar_pid(&home, process.pid());
     state.supervisor.install(process);
     if state.supervisor.is_cancelled() {
         state.request_stop();

@@ -31,8 +31,12 @@ pub enum ReadyError {
 /// The bound loopback port, or `None` when the line is not a ready signal.
 pub fn parse_ready_line(line: &str) -> Option<u16> {
     let rest = line.trim().strip_prefix(READY_PREFIX)?;
-    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-    if digits.is_empty() {
+    let digit_count = rest.chars().take_while(|c| c.is_ascii_digit()).count();
+    if digit_count == 0 {
+        return None;
+    }
+    let (digits, tail) = rest.split_at(digit_count);
+    if !tail.is_empty() && !tail.starts_with(|c: char| c.is_whitespace() || c == '(') {
         return None;
     }
     digits.parse().ok().filter(|port| *port > 0)
@@ -100,6 +104,7 @@ mod tests {
         assert_eq!(parse_ready_line("booting"), None);
         assert_eq!(parse_ready_line("dsh web: http://0.0.0.0:8080"), None);
         assert_eq!(parse_ready_line("dsh web: http://127.0.0.1:0"), None);
+        assert_eq!(parse_ready_line("dsh web: http://127.0.0.1:123evil"), None);
     }
 
     #[test]

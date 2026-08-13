@@ -25,7 +25,13 @@ pub enum HttpError {
     /// Transport failure.
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    /// The response exceeded the 4MB desktop cap.
+    #[error("HTTP response exceeded 4MB")]
+    TooLarge,
 }
+
+/// Maximum response body the desktop health client will buffer.
+pub const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 
 /// Perform one HTTP/1.1 request against `127.0.0.1`.
 ///
@@ -73,9 +79,31 @@ pub fn http_request(
         stream.write_all(bytes)?;
     }
 
-    let mut buf = Vec::new();
-    stream.read_to_end(&mut buf)?;
+    let buf = read_limited(&mut stream, MAX_RESPONSE_BYTES)?;
     parse_http_response(&buf)
+}
+
+/// Read at most `max` bytes. Used so a runaway sidecar cannot fill RAM.
+///
+/// # Parameters
+/// - `reader`: response stream.
+/// - `max`: inclusive byte cap.
+///
+/// # Returns
+/// The buffered bytes, or [`HttpError::TooLarge`].
+pub fn read_limited<R: Read>(reader: &mut R, max: usize) -> Result<Vec<u8>, HttpError> {
+    let mut buf = Vec::new();
+    let mut chunk = [0_u8; 8192];
+    loop {
+        let n = reader.read(&mut chunk)?;
+        if n == 0 {
+            return Ok(buf);
+        }
+        if buf.len().saturating_add(n) > max {
+            return Err(HttpError::TooLarge);
+        }
+        buf.extend_from_slice(&chunk[..n]);
+    }
 }
 
 fn parse_http_response(raw: &[u8]) -> Result<HttpResponse, HttpError> {
@@ -134,5 +162,11 @@ mod tests {
         assert_eq!(resp.status, 200);
         assert_eq!(resp.body, "ping");
         server.join().unwrap();
+    }
+
+    #[test]
+    fn rejects_oversized_response() {
+        let err = read_limited(&mut &b"abcdef"[..], 4).unwrap_err();
+        assert!(matches!(err, HttpError::TooLarge));
     }
 }

@@ -191,6 +191,14 @@ impl SidecarProcess {
     ///
     /// # Parameters
     /// - `grace`: drain window matching the Node process-shutdown contract (5s).
+    /// Sidecar process id for `sidecar.pid`.
+    ///
+    /// # Returns
+    /// The OS pid of the Node process.
+    pub fn pid(&self) -> u32 {
+        self.child.id()
+    }
+
     pub fn shutdown(&mut self, grace: Duration) {
         if self.shutdown_done {
             return;
