@@ -171,6 +171,7 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
   const route: WebRoute = {
     kind: 'prefix',
     path: API_PATH,
+    owner: name,
     handler: async (req, res) => {
       if (!isTrustedApiRequest(req, trustedHosts)) {
         res.writeHead(403)
@@ -195,6 +196,7 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
     ): void => {
       apiCtx.effect(() => apiCtx.webServer.registerUpgrade({
         path,
+        owner: name,
         handler: (req, socket, head) => {
           if (!isTrustedApiRequest(req, trustedHosts)) {
             rejectWebSocketUpgrade(socket)

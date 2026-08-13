@@ -57,6 +57,9 @@ function fakeHttpServer(host: '127.0.0.1' | '0.0.0.0' = '127.0.0.1'): {
     host,
     port: 4567,
     register: () => () => {},
+    listRegistrations: () => [
+      { kind: 'prefix' as const, path: '/api', owner: 'client-connection' },
+    ],
     registerFallback: (handler: unknown) => {
       fallback = handler
       return () => { fallback = undefined }

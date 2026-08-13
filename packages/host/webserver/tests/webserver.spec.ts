@@ -112,6 +112,22 @@ describe('real Loader composition', () => {
     expect(await request(port, '/api/deep/leaf')).toMatchObject({ status: 200, body: 'DEEP' })
     expect(await request(port, '/api')).toMatchObject({ status: 200, body: 'API' })
     expect(await request(port, '/api/anything', { method: 'POST' })).toMatchObject({ status: 200, body: 'API' })
+    expect(server.listRegistrations()).toEqual(expect.arrayContaining([
+      { kind: 'exact', path: '/probe', owner: 'unknown' },
+      { kind: 'prefix', path: '/api', owner: 'unknown' },
+      { kind: 'prefix', path: '/api/deep', owner: 'unknown' },
+    ]))
+    const shadow = server.register({
+      kind: 'exact',
+      path: '/api/host.describe',
+      owner: 'shadow',
+      handler: (_req, res) => { res.writeHead(200); res.end('SHADOW') },
+    })
+    expect(await request(port, '/api/host.describe')).toMatchObject({ status: 200, body: 'SHADOW' })
+    expect(server.listRegistrations()).toEqual(expect.arrayContaining([
+      { kind: 'exact', path: '/api/host.describe', owner: 'shadow' },
+    ]))
+    shadow()
 
     // Fallback seat: 404 while unclaimed; the owner answers everything no
     // named route matches; index taps are the owner's to apply; the seat

@@ -7,6 +7,7 @@ import { createServer } from 'node:http'
 import vm from 'node:vm'
 import { describe, expect, it } from 'vitest'
 import {
+  assertDesktopApiExclusive,
   BOOTSTRAP_PATH,
   BOOTSTRAP_TTL_MS,
   DesktopBootstrap,
@@ -31,6 +32,36 @@ function evaluateInjection(html: string): { alertCalls: number; bootstrap: unkno
   })
   return { alertCalls, bootstrap: window.__DSH_DESKTOP_BOOTSTRAP__ }
 }
+
+describe('desktop /api exclusive audit', () => {
+  it('allows connection-owned /api routes and rejects exact, longer-prefix, and upgrade shadows', () => {
+    expect(() => {
+      assertDesktopApiExclusive([
+        { kind: 'prefix', path: '/api', owner: 'client-connection' },
+        { kind: 'upgrade', path: '/api/events.mux', owner: 'client-connection' },
+        { kind: 'upgrade', path: '/api/events.host', owner: 'client-connection' },
+        { kind: 'fallback', path: '*', owner: 'frontend-static' },
+      ])
+    }).not.toThrow()
+    expect(() => {
+      assertDesktopApiExclusive([
+        { kind: 'prefix', path: '/api', owner: 'client-connection' },
+        { kind: 'exact', path: '/api/host.describe', owner: 'shadow' },
+      ])
+    }).toThrow(/exact \/api\/host.describe owner=shadow/)
+    expect(() => {
+      assertDesktopApiExclusive([
+        { kind: 'prefix', path: '/api', owner: 'client-connection' },
+        { kind: 'prefix', path: '/api/internal', owner: 'unknown' },
+      ])
+    }).toThrow(/prefix \/api\/internal owner=unknown/)
+    expect(() => {
+      assertDesktopApiExclusive([
+        { kind: 'upgrade', path: '/api/events.other', owner: 'patch' },
+      ])
+    }).toThrow(/upgrade \/api\/events.other owner=patch/)
+  })
+})
 
 describe('nonce consume', () => {
   it('accepts the nonce once and rejects reuse, mismatch, and expiry', () => {

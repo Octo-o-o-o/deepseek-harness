@@ -25,6 +25,9 @@ export const STATUS_PATH = '/__dshd_status'
 /** Header the shell sends when polling {@link STATUS_PATH}. */
 export const BOOTSTRAP_STATUS_HEADER = 'x-dsh-bootstrap'
 
+/** Owner id the connection plugin writes on `/api` registrations. */
+export const CONNECTION_ROUTE_OWNER = 'client-connection'
+
 /** Single-use nonce lifetime. */
 export const BOOTSTRAP_TTL_MS = 30_000
 
@@ -243,6 +246,36 @@ function writeEmpty(
 ): void {
   res.writeHead(status, { 'cache-control': 'no-store', ...extra })
   res.end()
+}
+
+/**
+ * Whether a registered path sits in the `/api` namespace.
+ *
+ * @param path - route pathname.
+ * @returns true for `/api` and `/api/...`.
+ */
+export function isApiNamespace(path: string): boolean {
+  return path === '/api' || path.startsWith('/api/')
+}
+
+/**
+ * Fail closed when anything other than connection owns an `/api` route.
+ *
+ * @param registrations - snapshot from `webServer.listRegistrations()`.
+ */
+export function assertDesktopApiExclusive(
+  registrations: readonly { kind: string; path: string; owner: string }[],
+): void {
+  const offenders = registrations.filter(entry =>
+    (entry.kind === 'exact' || entry.kind === 'prefix' || entry.kind === 'upgrade')
+    && isApiNamespace(entry.path)
+    && entry.owner !== CONNECTION_ROUTE_OWNER,
+  )
+  if (offenders.length === 0) return
+  const detail = offenders
+    .map(entry => `${entry.kind} ${entry.path} owner=${entry.owner}`)
+    .join(', ')
+  throw new Error(`web-app: desktop mode refuses extra /api registrations: ${detail}`)
 }
 
 function readLimitedBody(req: IncomingMessage, limit: number): Promise<string> {
