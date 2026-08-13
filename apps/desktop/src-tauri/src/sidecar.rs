@@ -187,10 +187,6 @@ pub fn wait_ready(
 }
 
 impl SidecarProcess {
-    /// SIGTERM the process group, wait `grace`, then SIGKILL.
-    ///
-    /// # Parameters
-    /// - `grace`: drain window matching the Node process-shutdown contract (5s).
     /// Sidecar process id for `sidecar.pid`.
     ///
     /// # Returns
@@ -199,6 +195,10 @@ impl SidecarProcess {
         self.child.id()
     }
 
+    /// SIGTERM the process group, wait `grace`, then SIGKILL.
+    ///
+    /// # Parameters
+    /// - `grace`: drain window matching the Node process-shutdown contract (5s).
     pub fn shutdown(&mut self, grace: Duration) {
         if self.shutdown_done {
             return;
