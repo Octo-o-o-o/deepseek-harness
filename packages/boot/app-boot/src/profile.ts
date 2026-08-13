@@ -24,7 +24,7 @@
 
 import { createRequire } from 'node:module'
 import {
-  existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, unlinkSync, writeFileSync,
+  existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
@@ -211,9 +211,11 @@ function ensureSymlink(link: string, target: string): void {
  * installation" contract. The closure (not just direct dependencies) is
  * required for out-of-tree plugins: their peer dependencies name Service
  * Definition packages (`dsh-compaction`, `dsh-invariants`, ...) that the app
- * reaches only through its Service Provider packages. Symlinked packages
- * resolve their own dependencies from their real directories (Node's default
- * symlink-following), so each package needs only its one flat link.
+ * reaches only through its Service Provider packages. A hoisted pnpm symlink
+ * is realpathed before the next BFS hop so isolated-store neighbors remain
+ * visible. Symlinked packages resolve their own dependencies from their real
+ * directories (Node's default symlink-following), so each package needs only
+ * its one flat link.
  * Idempotent: correct links are kept and moved installations are
  * re-pointed; a stale link to a vanished package stays until its name is
  * reused (dangling links are invisible to resolution).
@@ -312,19 +314,41 @@ function normalizeShippedProfile(name: string, dir: string, manifest: ProfileMan
 }
 
 /**
+ * Anchors used to probe `require` search paths for one package.json.
+ * A hoisted pnpm symlink's lexical path does not see `.pnpm` neighbors;
+ * the realpath does, which is also how Node ESM follows that package.
+ * @param anchor - absolute path of a package.json (file or symlink).
+ * @returns the lexical path, then its realpath when they differ.
+ */
+function resolutionAnchors(anchor: string): string[] {
+  const anchors = [anchor]
+  try {
+    const real = realpathSync(anchor)
+    if (real !== anchor) anchors.push(real)
+  /* v8 ignore next 3 -- realpath of a just-found package.json fails only on a vanished path or an OS permission fault */
+  } catch {
+    // keep the lexical spelling so lookup still matches Node's default search
+  }
+  return anchors
+}
+
+/**
  * Resolve a package's root directory from one anchor without depending on the
  * package exporting `./package.json` (`require.resolve` would need that):
  * probe the require resolution paths for a directory holding the named
- * manifest. This is Node's own node_modules lookup order, so the result
- * matches what the Loader would import from the same anchor, and
- * `existsSync` follows the symlinks pnpm's isolated layout uses.
+ * manifest. Lexical lookup matches Node's default `node_modules` walk; when
+ * the anchor is a hoisted symlink, the realpath walk matches ESM and finds
+ * the isolated store neighbors `pnpm deploy` leaves next to the real package.
+ * `existsSync` follows those store symlinks.
  */
 function packageDirFromAnchor(anchor: string, packageName: string): string | undefined {
   // resolve.paths returns null only for builtins, which no bundle name is.
-  /* v8 ignore next */
-  for (const searchPath of createRequire(anchor).resolve.paths(packageName) ?? []) {
-    const candidate = join(searchPath, packageName)
-    if (existsSync(join(candidate, 'package.json'))) return candidate
+  for (const searchAnchor of resolutionAnchors(anchor)) {
+    /* v8 ignore next */
+    for (const searchPath of createRequire(searchAnchor).resolve.paths(packageName) ?? []) {
+      const candidate = join(searchPath, packageName)
+      if (existsSync(join(candidate, 'package.json'))) return candidate
+    }
   }
   return undefined
 }

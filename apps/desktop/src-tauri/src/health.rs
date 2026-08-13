@@ -132,14 +132,17 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            let mut buf = [0_u8; 2048];
+            let mut buf = [0_u8; 4096];
             let n = stream.read(&mut buf).unwrap_or(0);
             let request = String::from_utf8_lossy(&buf[..n]);
             assert!(request.contains("POST /api/host.describe"));
             assert!(request.contains("X-DSH-Token: abc"));
             stream
-                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}")
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
                 .unwrap();
+            let _ = stream.shutdown(std::net::Shutdown::Write);
+            let mut rest = Vec::new();
+            let _ = stream.read_to_end(&mut rest);
         });
         check_host_described(port, "abc").unwrap();
         assert!(host_describe_body().contains("host.describe"));

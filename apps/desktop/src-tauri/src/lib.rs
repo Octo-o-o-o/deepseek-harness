@@ -115,11 +115,24 @@ fn boot_and_navigate(
     let workspace = default_workspace_cwd(&home);
     std::fs::create_dir_all(home.join("logs")).map_err(|err| err.to_string())?;
     let token = generate_desktop_token().map_err(|err| err.to_string())?;
+    let mut env = vec![("DSH_HOME".into(), home.to_string_lossy().into_owned())];
+    if let Some(node_modules) = bin
+        .parent()
+        .and_then(|lib| lib.parent())
+        .map(|app| app.join("node_modules"))
+    {
+        if node_modules.is_dir() {
+            env.push((
+                "NODE_PATH".into(),
+                node_modules.to_string_lossy().into_owned(),
+            ));
+        }
+    }
     let spec = SidecarSpec {
         program: node,
         args: desktop_web_args(&bin, &["--desktop-token".into(), token.clone()]),
         cwd: workspace,
-        env: vec![("DSH_HOME".into(), home.to_string_lossy().into_owned())],
+        env,
         log_path: home.join("logs/sidecar.log"),
     };
     let mut phase = BootPhase::Idle;

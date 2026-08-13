@@ -7,7 +7,11 @@
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",
-    "build": "tauri build"
+    "build": "tauri build --bundles app && node scripts/pack-sidecar.mjs embed",
+    "pack": "node scripts/pack-sidecar.mjs"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.0"
+  }
 }

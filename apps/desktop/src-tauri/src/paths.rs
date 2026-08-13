@@ -172,13 +172,24 @@ pub fn macos_resource_dir(exe: &Path) -> Option<PathBuf> {
 
 fn bundled_node(exe: &Path) -> Option<PathBuf> {
     let resources = macos_resource_dir(exe)?;
-    let candidate = resources.join("sidecar/dist/bin/node");
-    Some(candidate)
+    [
+        resources.join("bin/node"),
+        resources.join("sidecar/dist/bin/node"),
+        resources.join("_up_/sidecar/dist/bin/node"),
+    ]
+    .into_iter()
+    .find(|candidate| candidate.is_file())
 }
 
 fn bundled_web_bin(exe: &Path) -> Option<PathBuf> {
     let resources = macos_resource_dir(exe)?;
-    Some(resources.join("sidecar/dist/app/apps/cli/lib/bin.js"))
+    [
+        resources.join("app/lib/bin.js"),
+        resources.join("sidecar/dist/app/lib/bin.js"),
+        resources.join("_up_/sidecar/dist/app/lib/bin.js"),
+    ]
+    .into_iter()
+    .find(|candidate| candidate.is_file())
 }
 
 fn home_dir() -> PathBuf {
@@ -213,11 +224,16 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_dir() -> PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("clock")
             .as_nanos();
-        let dir = env::temp_dir().join(format!("dsh-desktop-paths-{nanos}"));
+        let dir = env::temp_dir().join(format!(
+            "dsh-desktop-paths-{nanos}-{}",
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
         fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -246,6 +262,26 @@ mod tests {
         let nested = root.join("apps/desktop/src-tauri");
         fs::create_dir_all(&nested).unwrap();
         assert_eq!(find_repo_root(&nested), Some(root.clone()));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn bundled_runtime_reads_resources_bin() {
+        let root = temp_dir();
+        let macos = root.join("DeepSeek.app/Contents/MacOS");
+        let resources = root.join("DeepSeek.app/Contents/Resources");
+        fs::create_dir_all(resources.join("bin")).unwrap();
+        fs::create_dir_all(resources.join("app/lib")).unwrap();
+        fs::write(resources.join("bin/node"), "node\n").unwrap();
+        fs::write(resources.join("app/lib/bin.js"), "bin\n").unwrap();
+        let exe = macos.join("dsh-desktop");
+        fs::create_dir_all(&macos).unwrap();
+        fs::write(&exe, "exe\n").unwrap();
+        assert_eq!(bundled_node(&exe), Some(resources.join("bin/node")));
+        assert_eq!(
+            bundled_web_bin(&exe),
+            Some(resources.join("app/lib/bin.js"))
+        );
         let _ = fs::remove_dir_all(root);
     }
 }

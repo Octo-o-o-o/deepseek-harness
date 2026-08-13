@@ -31,6 +31,10 @@
       "icons/128x128.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": {
+      "../sidecar/dist/bin/node": "bin/node",
+      "../sidecar/dist/app": "app"
+    }
   }
 }
