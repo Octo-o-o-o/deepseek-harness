@@ -5,7 +5,7 @@ import { AbstractApiClient } from './api.ts'
 import { hostFrameSchema, muxFrameSchema } from '@deepseek-ai/dsh-host-apiproxy/api/events.schema'
 import { serverRequestSchema } from '@deepseek-ai/dsh-host-apiproxy/api/rpc.schema'
 import { HOST_EVENTS_PATH, MUX_EVENTS_PATH } from '../api-path.ts'
-import { withDesktopToken } from './desktop-token.ts'
+
 
 type SocketItem<F> = { kind: 'frame'; envelope: RpcRequest<F> } | { kind: 'end' }
 type Parser<F> = { parse(value: unknown): F }
@@ -13,7 +13,7 @@ type Parser<F> = { parse(value: unknown): F }
 /** Browser platform subclass: unary/respond use fetch; mux/host use downlink-only WebSockets. */
 export class WebApiClient extends AbstractApiClient {
   protected doFetch(input: URL, init?: RequestInit): Promise<Response> {
-    return globalThis.fetch(input, withDesktopToken(init))
+    return globalThis.fetch(input, init)
   }
 
   protected override openMux(

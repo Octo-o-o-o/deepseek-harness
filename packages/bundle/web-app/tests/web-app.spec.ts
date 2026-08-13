@@ -12,7 +12,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import type { WebServer } from '@deepseek-ai/dsh-host-webserver'
-import { apply, Config, escapeDesktopTokenForScript, injectDesktopTokenScript, internals } from '../src/index.ts'
+import { apply, Config, internals } from '../src/index.ts'
+import { injectDesktopBootstrapScript } from '../src/desktop-bootstrap.ts'
 import { WEB_STARTUP_SERVICE } from '../src/startup.ts'
 
 vi.mock('node:os', async importOriginal => ({
@@ -55,6 +56,7 @@ function fakeHttpServer(host: '127.0.0.1' | '0.0.0.0' = '127.0.0.1'): {
   const server = {
     host,
     port: 4567,
+    register: () => () => {},
     registerFallback: (handler: unknown) => {
       fallback = handler
       return () => { fallback = undefined }
@@ -234,7 +236,7 @@ describe('web-app runtime glue', () => {
     await ctx.fiber.dispose()
   })
 
-  it('does not register a token tap when webStartup has no token', async () => {
+  it('does not register a bootstrap tap when webStartup has no desktop auth', async () => {
     stageDist()
     const ctx = new Context()
     const { server, applyTaps } = fakeHttpServer()
@@ -245,24 +247,28 @@ describe('web-app runtime glue', () => {
     await ctx.fiber.dispose()
   })
 
-  it('injects a script-escaped token when webStartup carries one', async () => {
+  it('injects a JSON-escaped nonce and never the token', async () => {
     stageDist()
     const ctx = new Context()
     const { server, applyTaps } = fakeHttpServer()
     ctx.provide('webServer', server)
-    ctx.provide(WEB_STARTUP_SERVICE, { trustedHosts: [], desktopToken: "ab<'>" })
+    ctx.provide(WEB_STARTUP_SERVICE, {
+      trustedHosts: [],
+      desktopToken: "ab<'>secret",
+      desktopBootstrapNonce: "ab<'>",
+    })
     apply(ctx, new Config({ printUrl: false, surfaceContext: false, trustedHosts: [] }))
     await new Promise(resolve => setTimeout(resolve, 0))
     const injected = applyTaps('<head></head><body>shell</body>')
-    expect(injected).toContain("window.__DSH_TOKEN__='ab\\u003c\\'\\u003e'")
-    expect(injected).toContain('dsh-token=ab%3C\'%3E')
+    expect(injected).toContain('window.__DSH_DESKTOP_BOOTSTRAP__')
+    expect(injected).not.toContain('secret')
+    expect(injected).not.toContain('__DSH_TOKEN__')
     expect(injected.startsWith('<head>')).toBe(true)
     await ctx.fiber.dispose()
   })
 
-  it('escapes script breakouts and prefixes html that has no head element', () => {
-    expect(escapeDesktopTokenForScript("a\\b'\u2028\u2029")).toBe("a\\\\b\\'\\u2028\\u2029")
-    expect(injectDesktopTokenScript('plain', 'tok')).toMatch(/^<script>window\.__DSH_TOKEN__='tok'/)
+  it('prefixes html that has no head element', () => {
+    expect(injectDesktopBootstrapScript('plain', 'tok')).toMatch(/^<script>window\.__DSH_DESKTOP_BOOTSTRAP__/)
   })
 
   it('resolves the real built frontend dist through the package exports, failing loud unbuilt', () => {

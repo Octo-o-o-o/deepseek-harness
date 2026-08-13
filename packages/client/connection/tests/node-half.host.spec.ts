@@ -156,14 +156,35 @@ describe('connection node half', () => {
     await routes[0]!.handler(fakeRequest({ host: '127.0.0.1:3080' }), missing.response)
     expect(missing.state.status).toBe(401)
     expect(missing.state.body).toBe('unauthorized')
-    const ok = fakeResponse()
-    await routes[0]!.handler(fakeRequest({ host: '127.0.0.1:3080', 'x-dsh-token': 'abc' }), ok.response)
-    expect(ok.state.status).not.toBe(401)
-    const rejected: Buffer[] = []
-    const socket = new PassThrough()
-    socket.on('data', (chunk) => { rejected.push(Buffer.from(chunk)) })
-    upgrades[0]!.handler(fakeRequest({ host: '127.0.0.1:3080' }, MUX_EVENTS_PATH), socket, Buffer.alloc(0))
-    expect(Buffer.concat(rejected).toString()).toContain('401 Unauthorized')
+    const wrong = fakeResponse()
+    await routes[0]!.handler(fakeRequest({ host: '127.0.0.1:3080', 'x-dsh-token': 'evil' }), wrong.response)
+    expect(wrong.state.status).toBe(401)
+    const headerOk = fakeResponse()
+    await routes[0]!.handler(fakeRequest({ host: '127.0.0.1:3080', 'x-dsh-token': 'abc' }), headerOk.response)
+    expect(headerOk.state.status).toBe(404)
+    const cookieOk = fakeResponse()
+    await routes[0]!.handler(fakeRequest({ host: '127.0.0.1:3080', cookie: 'dsh-token=abc' }), cookieOk.response)
+    expect(cookieOk.state.status).toBe(404)
+    const fakeOrigin = fakeResponse()
+    await routes[0]!.handler(fakeRequest({
+      host: '127.0.0.1:3080',
+      origin: 'http://evil.example',
+      'x-dsh-token': 'abc',
+    }), fakeOrigin.response)
+    expect(fakeOrigin.state.status).toBe(403)
+    for (const path of [MUX_EVENTS_PATH, HOST_EVENTS_PATH]) {
+      const rejected: Buffer[] = []
+      const socket = new PassThrough()
+      socket.on('data', (chunk) => { rejected.push(Buffer.from(chunk)) })
+      const ended = once(socket, 'end')
+      await upgrades.find(route => route.path === path)!.handler(
+        fakeRequest({ host: '127.0.0.1:3080' }, path),
+        socket,
+        Buffer.alloc(0),
+      )
+      await ended
+      expect(Buffer.concat(rejected).toString()).toContain('401 Unauthorized')
+    }
     await dispose()
   })
 

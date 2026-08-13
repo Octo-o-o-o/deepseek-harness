@@ -21,6 +21,16 @@ import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-shell-env'
+import {
+  BOOTSTRAP_PATH,
+  DesktopBootstrap,
+  handleDesktopBootstrap,
+  handleDesktopReady,
+  handleDesktopStatus,
+  injectDesktopBootstrapScript,
+  READY_PATH,
+  STATUS_PATH,
+} from './desktop-bootstrap.ts'
 import { WEB_STARTUP_SERVICE, type WebStartupValues } from './startup.ts'
 
 /** Stable Cordis plugin name. */
@@ -127,45 +137,17 @@ function resolveDistIndex(): string {
 /** Test hook: hosts with no built frontend dist substitute the resolver; production never touches this. */
 export const internals: { resolveDistIndex: () => string } = { resolveDistIndex }
 
-/**
- * Escape a desktop token so it can sit inside a single-quoted script literal.
- * `<` is encoded so a token cannot break out of the script element.
- *
- * @param token - raw per-launch token.
- * @returns a JavaScript string literal body.
- */
-export function escapeDesktopTokenForScript(token: string): string {
-  return token
-    .replaceAll('\\', '\\\\')
-    .replaceAll('\'', '\\\'')
-    .replaceAll('<', '\\u003c')
-    .replaceAll('>', '\\u003e')
-    .replaceAll('\u2028', '\\u2028')
-    .replaceAll('\u2029', '\\u2029')
-}
-
-/**
- * Inject `window.__DSH_TOKEN__` and a same-origin cookie (WebSocket cannot set
- * custom headers; the Cookie header is how the upgrade carries the token).
- *
- * @param html - index.html body.
- * @param token - per-launch token; never logged.
- * @returns html with the token script inserted.
- */
-export function injectDesktopTokenScript(html: string, token: string): string {
-  const escaped = escapeDesktopTokenForScript(token)
-  const cookie = encodeURIComponent(token)
-  const snippet = `<script>window.__DSH_TOKEN__='${escaped}';document.cookie='dsh-token=${cookie};path=/;SameSite=Strict';</script>`
-  const head = html.indexOf('<head>')
-  if (head === -1) return `${snippet}${html}`
-  const insertAt = head + '<head>'.length
-  return `${html.slice(0, insertAt)}${snippet}${html.slice(insertAt)}`
-}
-
-function desktopTokenFromStartup(ctx: Context): string | undefined {
+function desktopBootstrapFromStartup(ctx: Context): DesktopBootstrap | undefined {
   const startup = ctx.get(WEB_STARTUP_SERVICE) as WebStartupValues | undefined
   const token = startup?.desktopToken
-  return token !== undefined && token !== '' ? token : undefined
+  const nonce = startup?.desktopBootstrapNonce
+  const hasToken = token !== undefined && token !== ''
+  const hasNonce = nonce !== undefined && nonce !== ''
+  if (hasToken !== hasNonce) {
+    throw new Error('web-app: desktop token and bootstrap nonce must both be set')
+  }
+  if (!hasToken || !hasNonce) return undefined
+  return new DesktopBootstrap(token, nonce)
 }
 
 /**
@@ -178,11 +160,35 @@ export function apply(ctx: Context, config: Config): void {
   const runtime = resolveLanTrust(ctx.webServer.host, config.trustedHosts)
   // Release dependent rows only after bind-dependent trust has been sampled once.
   ctx.provide(WEB_RUNTIME_SERVICE, runtime)
-  const desktopToken = desktopTokenFromStartup(ctx)
-  if (desktopToken !== undefined) {
+  const desktop = desktopBootstrapFromStartup(ctx)
+  if (desktop !== undefined) {
     ctx.effect(
-      () => ctx.webServer.tapIndex(html => injectDesktopTokenScript(html, desktopToken)),
-      'web-app: desktop token',
+      () => ctx.webServer.tapIndex(html => injectDesktopBootstrapScript(html, desktop.nonce)),
+      'web-app: desktop bootstrap',
+    )
+    ctx.effect(
+      () => ctx.webServer.register({
+        kind: 'exact',
+        path: BOOTSTRAP_PATH,
+        handler: (req, res) => { void handleDesktopBootstrap(req, res, desktop) },
+      }),
+      'web-app: /__dshd_bootstrap',
+    )
+    ctx.effect(
+      () => ctx.webServer.register({
+        kind: 'exact',
+        path: READY_PATH,
+        handler: (req, res) => { handleDesktopReady(req, res, desktop) },
+      }),
+      'web-app: /__dshd_ready',
+    )
+    ctx.effect(
+      () => ctx.webServer.register({
+        kind: 'exact',
+        path: STATUS_PATH,
+        handler: (req, res) => { handleDesktopStatus(req, res, desktop) },
+      }),
+      'web-app: /__dshd_status',
     )
   }
   ctx.plugin(FrontendStatic, { distIndex: internals.resolveDistIndex() })

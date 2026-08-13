@@ -27,6 +27,9 @@
       "path": "../../host/frontend-static"
     },
     {
+      "path": "../../client/connection"
+    },
+    {
       "path": "../../host/webserver"
     },
     {
