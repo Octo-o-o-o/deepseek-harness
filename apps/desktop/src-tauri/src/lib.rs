@@ -16,6 +16,7 @@ mod process;
 mod ready;
 mod sidecar;
 mod state;
+mod supervisor;
 mod token;
 mod tray;
 
@@ -35,25 +36,30 @@ use crate::migrate::{
 use crate::paths::{
     default_dsh_home, default_workspace_cwd, ensure_desktop_state, resolve_node, resolve_web_bin,
 };
-use crate::sidecar::{desktop_web_args, spawn_sidecar, wait_ready, SidecarProcess, SidecarSpec};
+use crate::sidecar::{desktop_web_args, spawn_sidecar, wait_ready, SidecarSpec};
 use crate::state::{transition, BootEvent, BootPhase};
+use crate::supervisor::SidecarSupervisor;
 use crate::token::generate_desktop_token;
 use crate::tray::install_tray;
 
 /// Shared runtime state held by the Tauri app.
 pub struct AppState {
-    sidecar: Mutex<Option<SidecarProcess>>,
+    supervisor: SidecarSupervisor,
+    boot: Mutex<Option<thread::JoinHandle<()>>>,
     _lock: Mutex<Option<HomeLock>>,
 }
 
 impl AppState {
-    /// Stop the sidecar tree if one is running.
-    pub fn shutdown_sidecar(&self) {
-        if let Ok(mut guard) = self.sidecar.lock() {
-            if let Some(process) = guard.as_mut() {
-                process.shutdown(Duration::from_secs(5));
+    /// Unique stop entry: cancel boot, take the sidecar out of the lock, shut it down.
+    pub fn request_stop(&self) {
+        self.supervisor.request_stop();
+    }
+
+    fn join_boot(&self) {
+        if let Ok(mut guard) = self.boot.lock() {
+            if let Some(handle) = guard.take() {
+                let _ = handle.join();
             }
-            *guard = None;
         }
     }
 }
@@ -72,7 +78,8 @@ pub fn run() {
             }
         }))
         .manage(AppState {
-            sidecar: Mutex::new(None),
+            supervisor: SidecarSupervisor::new(),
+            boot: Mutex::new(None),
             _lock: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![open_log_directory])
@@ -81,7 +88,7 @@ pub fn run() {
             let signal_handle = app.handle().clone();
             if let Err(err) = ctrlc::set_handler(move || {
                 if let Some(state) = signal_handle.try_state::<AppState>() {
-                    state.shutdown_sidecar();
+                    state.request_stop();
                 }
                 signal_handle.exit(0);
             }) {
@@ -91,7 +98,7 @@ pub fn run() {
                 .get_webview_window("main")
                 .ok_or("desktop: main window missing")?;
             let handle = app.handle().clone();
-            thread::spawn(move || {
+            let boot = thread::spawn(move || {
                 let state = handle.state::<AppState>();
                 let exe = std::env::current_exe().unwrap_or_else(|_| Path::new(".").to_path_buf());
                 let cwd = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
@@ -99,6 +106,11 @@ pub fn run() {
                     show_error(&window, &message);
                 }
             });
+            if let Some(state) = app.try_state::<AppState>() {
+                if let Ok(mut guard) = state.boot.lock() {
+                    *guard = Some(boot);
+                }
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -112,7 +124,8 @@ pub fn run() {
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
                 if let Some(state) = app.try_state::<AppState>() {
-                    state.shutdown_sidecar();
+                    state.request_stop();
+                    state.join_boot();
                 }
             }
         });
@@ -167,14 +180,15 @@ fn boot_and_navigate(
     let spawned = spawn_sidecar(&spec).map_err(|err| err.to_string())?;
     phase = transition(phase, BootEvent::SpawnOk);
     let (process, ready) = spawned.into_parts();
-    {
-        let mut guard = state.sidecar.lock().map_err(|err| err.to_string())?;
-        *guard = Some(process);
+    state.supervisor.install(process);
+    if state.supervisor.is_cancelled() {
+        state.request_stop();
+        return Err("boot cancelled".into());
     }
     let port = match wait_ready(&ready, READY_TIMEOUT) {
         Ok(port) => port,
         Err(err) => {
-            state.shutdown_sidecar();
+            state.request_stop();
             let _ = transition(
                 phase,
                 BootEvent::Failed {
@@ -185,8 +199,12 @@ fn boot_and_navigate(
         }
     };
     phase = transition(phase, BootEvent::Bound { port });
+    if state.supervisor.is_cancelled() {
+        state.request_stop();
+        return Err("boot cancelled".into());
+    }
     if let Err(err) = check_loader_ready(port) {
-        state.shutdown_sidecar();
+        state.request_stop();
         let _ = transition(
             phase,
             BootEvent::Failed {
@@ -197,7 +215,7 @@ fn boot_and_navigate(
     }
     phase = transition(phase, BootEvent::LoaderReady);
     if let Err(err) = check_host_described(port, &token) {
-        state.shutdown_sidecar();
+        state.request_stop();
         let _ = transition(
             phase,
             BootEvent::Failed {
@@ -206,7 +224,10 @@ fn boot_and_navigate(
         );
         return Err(err.to_string());
     }
-    navigate_to_sidecar(window, port)?;
+    if let Err(err) = navigate_to_sidecar(window, port) {
+        state.request_stop();
+        return Err(err);
+    }
     let _ = transition(phase, BootEvent::Visible);
     Ok(())
 }

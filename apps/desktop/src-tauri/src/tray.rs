@@ -63,7 +63,7 @@ fn hide_main(app: &AppHandle) {
 
 fn quit_app(app: &AppHandle) {
     if let Some(state) = app.try_state::<AppState>() {
-        state.shutdown_sidecar();
+        state.request_stop();
     }
     app.exit(0);
 }

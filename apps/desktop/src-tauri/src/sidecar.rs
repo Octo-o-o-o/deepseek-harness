@@ -37,6 +37,8 @@ pub struct SpawnedSidecar {
 /// Owned sidecar child.
 pub struct SidecarProcess {
     child: Child,
+    readers: Vec<thread::JoinHandle<()>>,
+    shutdown_done: bool,
     #[cfg(windows)]
     job: Option<crate::job::JobObject>,
 }
@@ -125,11 +127,11 @@ pub fn spawn_sidecar(spec: &SidecarSpec) -> Result<SpawnedSidecar, SidecarError>
     })?;
 
     let log_err = spec.log_path.clone();
-    thread::spawn(move || drain_to_log(stderr, &log_err));
+    let stderr_reader = thread::spawn(move || drain_to_log(stderr, &log_err));
 
     let (tx, rx) = mpsc::channel();
     let log_out = spec.log_path.clone();
-    thread::spawn(move || {
+    let stdout_reader = thread::spawn(move || {
         let reader = BufReader::new(stdout);
         let mut lines = LoggingLines {
             inner: reader.lines(),
@@ -141,14 +143,14 @@ pub fn spawn_sidecar(spec: &SidecarSpec) -> Result<SpawnedSidecar, SidecarError>
             Instant::now,
         );
         let _ = tx.send(result);
-        for line in lines.flatten() {
-            let _ = append_log(&log_out, &line);
-        }
+        lines.drain_rest();
     });
 
     Ok(SpawnedSidecar {
         process: SidecarProcess {
             child,
+            readers: vec![stderr_reader, stdout_reader],
+            shutdown_done: false,
             #[cfg(windows)]
             job,
         },
@@ -191,18 +193,27 @@ impl SidecarProcess {
     /// # Parameters
     /// - `grace`: drain window matching the Node process-shutdown contract (5s).
     pub fn shutdown(&mut self, grace: Duration) {
+        if self.shutdown_done {
+            return;
+        }
+        self.shutdown_done = true;
         let mut tree = ChildTree {
             child: &mut self.child,
             #[cfg(windows)]
             job: self.job.as_ref(),
         };
         shutdown_tree(&mut tree, grace, Instant::now, thread::sleep);
+        for reader in self.readers.drain(..) {
+            let _ = reader.join();
+        }
     }
 }
 
 impl Drop for SidecarProcess {
     fn drop(&mut self) {
-        self.shutdown(Duration::from_secs(5));
+        if !self.shutdown_done {
+            self.shutdown(Duration::from_secs(5));
+        }
     }
 }
 
@@ -223,6 +234,22 @@ where
             let _ = append_log(&self.log_path, line);
         }
         item
+    }
+}
+
+impl<I> LoggingLines<I>
+where
+    I: Iterator<Item = std::io::Result<String>>,
+{
+    fn drain_rest(&mut self) {
+        for item in self.inner.by_ref() {
+            match item {
+                Ok(line) => {
+                    let _ = append_log(&self.log_path, &line);
+                }
+                Err(_) => break,
+            }
+        }
     }
 }
 

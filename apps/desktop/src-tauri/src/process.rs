@@ -10,6 +10,8 @@ pub trait ProcessTree {
     fn signal_kill(&mut self);
     /// Whether any process in the tree is still running.
     fn is_alive(&mut self) -> bool;
+    /// Reap a dead child so it does not stay a zombie.
+    fn reap(&mut self);
 }
 
 /// Send SIGTERM, wait up to `grace`, then SIGKILL if the tree is still alive.
@@ -32,7 +34,12 @@ where
     }
     if tree.is_alive() {
         tree.signal_kill();
+        let reap_until = now() + Duration::from_secs(2);
+        while tree.is_alive() && now() < reap_until {
+            sleep_for(Duration::from_millis(20));
+        }
     }
+    tree.reap();
 }
 
 /// Send `sig` to every process in `pgid`.
@@ -102,6 +109,10 @@ impl ProcessTree for ChildTree<'_> {
     fn is_alive(&mut self) -> bool {
         matches!(self.child.try_wait(), Ok(None))
     }
+
+    fn reap(&mut self) {
+        let _ = self.child.try_wait();
+    }
 }
 
 #[cfg(test)]
@@ -132,6 +143,8 @@ mod tests {
         fn is_alive(&mut self) -> bool {
             self.alive.get()
         }
+
+        fn reap(&mut self) {}
     }
 
     #[test]
