@@ -327,10 +327,10 @@ async function selfCheck() {
 async function embedIntoApp() {
   const appPath = join(
     desktopRoot,
-    'src-tauri/target/release/bundle/macos/DeepSeek Harness Desktop.app',
+    'src-tauri/target/release/bundle/macos/dshd.app',
   )
   const destRoot = join(appPath, 'Contents/Resources')
-  if (!(await pathExists(join(appPath, 'Contents/MacOS/dsh-desktop')))) {
+  if (!(await pathExists(join(appPath, 'Contents/MacOS/dshd')))) {
     throw new Error(`embed: missing app bundle at ${appPath}`)
   }
   const destBin = join(destRoot, 'bin')

@@ -847,7 +847,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "dsh-desktop"
+name = "dshd"
 version = "0.1.0"
 dependencies = [
  "ctrlc",

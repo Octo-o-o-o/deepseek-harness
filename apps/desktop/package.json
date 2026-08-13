@@ -1,8 +1,8 @@
 {
-  "name": "@deepseek-ai/dsh-desktop",
+  "name": "@deepseek-ai/dshd",
   "private": true,
   "version": "0.1.0",
-  "description": "Tauri 2 desktop shell for DeepSeek Harness",
+  "description": "dshd: Tauri 2 desktop shell for DeepSeek Harness",
   "type": "module",
   "scripts": {
     "tauri": "tauri",

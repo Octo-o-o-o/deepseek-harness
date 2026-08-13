@@ -1,11 +1,11 @@
 [package]
-name = "dsh-desktop"
+name = "dshd"
 version = "0.1.0"
-description = "DeepSeek Harness desktop shell"
+description = "dshd desktop shell"
 authors = ["DeepSeek"]
 edition = "2021"
 rust-version = "1.77"
-default-run = "dsh-desktop"
+default-run = "dshd"
 
 [lib]
 name = "dsh_desktop_lib"

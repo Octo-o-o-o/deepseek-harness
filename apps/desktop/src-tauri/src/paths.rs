@@ -329,7 +329,7 @@ mod tests {
         fs::create_dir_all(resources.join("app/lib")).unwrap();
         fs::write(resources.join("bin/node"), "node\n").unwrap();
         fs::write(resources.join("app/lib/bin.js"), "bin\n").unwrap();
-        let exe = macos.join("dsh-desktop");
+        let exe = macos.join("dshd");
         fs::create_dir_all(&macos).unwrap();
         fs::write(&exe, "exe\n").unwrap();
         assert_eq!(bundled_node(&exe), Some(resources.join("bin/node")));

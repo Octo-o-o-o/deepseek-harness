@@ -1,4 +1,4 @@
-# DeepSeek Harness Desktop
+# dshd
 
 Tauri 2 shell that starts a local `dsh web` sidecar on `127.0.0.1`, waits for the ready line, checks `__DSH_BOOT__` and `host.describe`, then loads the existing Web GUI in a WebView.
 
@@ -42,10 +42,10 @@ cargo test
 
 ```sh
 # repo root: production deploy + pinned Node v24.19.0 + PATH-stripped boot
-pnpm --filter @deepseek-ai/dsh-desktop run pack
+pnpm --filter @deepseek-ai/dshd run pack
 
 # this package: unsigned .app, then re-copy the sidecar (Tauri drops symlinks)
-pnpm --filter @deepseek-ai/dsh-desktop run build
+pnpm --filter @deepseek-ai/dshd run build
 ```
 
 `scripts/pack-sidecar.mjs` steps: `deploy`, `runtime`, `check`, `embed` (after `tauri build`). Self-check requires a ready line within 15s, `GET /` 200 with `__DSH_BOOT__`, and SIGTERM exit 0, with `PATH=/usr/bin:/bin:/usr/sbin:/sbin`.
@@ -74,4 +74,4 @@ The shell always generates a per-launch hex token and passes `--desktop-token`. 
 - Windows sandbox remains partial, same as the CLI.
 - WebView2 presence detection / installer prompt is not wired.
 - The `.app` is unsigned; notarize is out of scope.
-- `open` of the `.app` from a sandbox may fail (`LSOpen` -54); launching `Contents/MacOS/dsh-desktop` still starts the sidecar.
+- `open` of the `.app` from a sandbox may fail (`LSOpen` -54); launching `Contents/MacOS/dshd` still starts the sidecar.
