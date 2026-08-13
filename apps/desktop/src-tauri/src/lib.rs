@@ -29,7 +29,7 @@ use std::time::Duration;
 
 use tauri::Manager;
 
-use crate::health::{check_host_described, check_loader_ready, check_websockets_ready};
+use crate::health::{check_host_described, check_loader_ready, wait_desktop_client_ready};
 use crate::lock::{try_lock_home, HomeLock};
 use crate::logs::{install_panic_hook, open_logs_dir, rotate_sidecar_log};
 use crate::migrate::{
@@ -175,7 +175,7 @@ fn boot_and_navigate(
     let mut env = vec![
         ("DSH_HOME".into(), home.to_string_lossy().into_owned()),
         ("DSH_DESKTOP_TOKEN".into(), token.clone()),
-        ("DSH_DESKTOP_BOOTSTRAP_NONCE".into(), nonce),
+        ("DSH_DESKTOP_BOOTSTRAP_NONCE".into(), nonce.clone()),
     ];
     if let Some(node_modules) = bin
         .parent()
@@ -246,7 +246,11 @@ fn boot_and_navigate(
         return Err(err.to_string());
     }
     phase = transition(phase, BootEvent::HostDescribed);
-    if let Err(err) = check_websockets_ready(port, &token) {
+    if let Err(err) = navigate_to_sidecar(window, port) {
+        state.request_stop();
+        return Err(err);
+    }
+    if let Err(err) = wait_desktop_client_ready(port, &nonce, READY_TIMEOUT) {
         state.request_stop();
         let _ = transition(
             phase,
@@ -257,10 +261,6 @@ fn boot_and_navigate(
         return Err(err.to_string());
     }
     phase = transition(phase, BootEvent::WsReady);
-    if let Err(err) = navigate_to_sidecar(window, port) {
-        state.request_stop();
-        return Err(err);
-    }
     let _ = transition(phase, BootEvent::Visible);
     Ok(())
 }

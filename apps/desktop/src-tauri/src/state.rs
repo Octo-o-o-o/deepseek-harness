@@ -17,12 +17,12 @@ pub enum BootPhase {
         /// OS-assigned listen port.
         port: u16,
     },
-    /// `POST /api/host.describe` returned 200.
+    /// `POST /api/host.describe` returned 200 and `result.ok`.
     HostDescribed {
         /// OS-assigned listen port.
         port: u16,
     },
-    /// Both downlink WebSockets accepted the upgrade.
+    /// The WebView client posted `/__dshd_ready` after both downlinks.
     WsReady {
         /// OS-assigned listen port.
         port: u16,
@@ -53,7 +53,7 @@ pub enum BootEvent {
     LoaderReady,
     /// Host describe handshake succeeded.
     HostDescribed,
-    /// Mux and host WebSocket upgrades succeeded.
+    /// Desktop client reported both downlinks ready.
     WsReady,
     /// WebView navigation completed.
     Visible,

@@ -16,6 +16,12 @@ pub enum HealthError {
     /// The index body is not a dsh-hosted page.
     #[error("index response is missing the __DSH_BOOT__ marker")]
     MissingBootMarker,
+    /// `host.describe` answered HTTP 200 but `result.ok` was not true.
+    #[error("host.describe result is not ok")]
+    DescribeNotOk,
+    /// `/__dshd_status` never reported `ready: true`.
+    #[error("desktop client did not become ready")]
+    ClientNotReady,
 }
 
 /// GET `http://127.0.0.1:<port>/` and require `__DSH_BOOT__`.
@@ -75,51 +81,77 @@ pub fn check_host_described(port: u16, token: &str) -> Result<(), HealthError> {
     if response.status != 200 {
         return Err(HealthError::BadStatus(response.status));
     }
-    Ok(())
-}
-
-const MUX_EVENTS_PATH: &str = "/api/events.mux";
-const HOST_EVENTS_PATH: &str = "/api/events.host";
-
-/// Upgrade both downlink WebSockets with the desktop token cookie.
-///
-/// # Parameters
-/// - `port`: sidecar loopback port.
-/// - `token`: per-launch token; sent only as `dsh-token`.
-///
-/// # Returns
-/// `Ok(())` when both upgrades return HTTP 101.
-pub fn check_websockets_ready(port: u16, token: &str) -> Result<(), HealthError> {
-    for path in [MUX_EVENTS_PATH, HOST_EVENTS_PATH] {
-        let response = websocket_upgrade(port, path, token)?;
-        if response.status != 101 {
-            return Err(HealthError::BadStatus(response.status));
-        }
+    if !host_describe_ok(&response.body) {
+        return Err(HealthError::DescribeNotOk);
     }
     Ok(())
 }
 
-fn websocket_upgrade(
+/// Whether a `host.describe` JSON body reports business success.
+///
+/// # Parameters
+/// - `body`: response body.
+///
+/// # Returns
+/// `true` when `result.ok` is JSON `true`.
+pub fn host_describe_ok(body: &str) -> bool {
+    let parsed: serde_json::Value = match serde_json::from_str(body) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+    parsed
+        .get("result")
+        .and_then(|result| result.get("ok"))
+        .and_then(serde_json::Value::as_bool)
+        == Some(true)
+}
+
+/// Poll `GET /__dshd_status` until the browser client reports ready.
+///
+/// # Parameters
+/// - `port`: sidecar loopback port.
+/// - `nonce`: bootstrap nonce sent as `X-DSH-Bootstrap`.
+/// - `timeout`: exclusive wait budget.
+///
+/// # Returns
+/// `Ok(())` when the status body is `{"ready":true}`.
+pub fn wait_desktop_client_ready(
     port: u16,
-    path: &str,
-    token: &str,
-) -> Result<crate::http::HttpResponse, HealthError> {
-    let cookie = format!("dsh-token={token}");
-    Ok(http_request(
-        "GET",
-        "127.0.0.1",
-        port,
-        path,
-        &[
-            ("Connection", "Upgrade"),
-            ("Upgrade", "websocket"),
-            ("Sec-WebSocket-Version", "13"),
-            ("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ=="),
-            ("Cookie", cookie.as_str()),
-        ],
-        None,
-        Duration::from_secs(5),
-    )?)
+    nonce: &str,
+    timeout: Duration,
+) -> Result<(), HealthError> {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        let response = http_request(
+            "GET",
+            "127.0.0.1",
+            port,
+            "/__dshd_status",
+            &[("X-DSH-Bootstrap", nonce)],
+            None,
+            Duration::from_secs(2),
+        );
+        if let Ok(response) = response {
+            if response.status == 200 && status_ready(&response.body) {
+                return Ok(());
+            }
+            if response.status != 200 && response.status != 401 {
+                return Err(HealthError::BadStatus(response.status));
+            }
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(HealthError::ClientNotReady);
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+fn status_ready(body: &str) -> bool {
+    let parsed: serde_json::Value = match serde_json::from_str(body) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+    parsed.get("ready").and_then(serde_json::Value::as_bool) == Some(true)
 }
 
 #[cfg(test)]
@@ -181,35 +213,38 @@ mod tests {
             let request = String::from_utf8_lossy(&buf[..n]);
             assert!(request.contains("POST /api/host.describe"));
             assert!(request.contains("X-DSH-Token: abc"));
-            stream
-                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
-                .unwrap();
+            let body = br#"{"type":"server-response","rpcId":"desktop-boot","result":{"ok":true,"value":{}}}"#;
+            let header = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            stream.write_all(header.as_bytes()).unwrap();
+            stream.write_all(body).unwrap();
             let _ = stream.shutdown(std::net::Shutdown::Write);
             let mut rest = Vec::new();
             let _ = stream.read_to_end(&mut rest);
         });
         check_host_described(port, "abc").unwrap();
         assert!(host_describe_body().contains("host.describe"));
+        assert!(!host_describe_ok(r#"{"result":{"ok":false}}"#));
     }
 
     #[test]
-    fn websocket_upgrade_requires_101() {
+    fn status_ready_requires_true() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         thread::spawn(move || {
-            for _ in 0..2 {
-                let (mut stream, _) = listener.accept().unwrap();
-                let mut buf = [0_u8; 4096];
-                let n = stream.read(&mut buf).unwrap_or(0);
-                let request = String::from_utf8_lossy(&buf[..n]);
-                assert!(request.contains("Upgrade: websocket"));
-                assert!(request.contains("Cookie: dsh-token=abc"));
-                stream
-                    .write_all(b"HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n")
-                    .unwrap();
-                let _ = stream.shutdown(std::net::Shutdown::Write);
-            }
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0_u8; 4096];
+            let n = stream.read(&mut buf).unwrap_or(0);
+            let request = String::from_utf8_lossy(&buf[..n]);
+            assert!(request.contains("GET /__dshd_status"));
+            assert!(request.contains("X-DSH-Bootstrap: nonce"));
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 13\r\nConnection: close\r\n\r\n{\"ready\":true}")
+                .unwrap();
+            let _ = stream.shutdown(std::net::Shutdown::Write);
         });
-        check_websockets_ready(port, "abc").unwrap();
+        wait_desktop_client_ready(port, "nonce", Duration::from_secs(2)).unwrap();
     }
 }
