@@ -5,3 +5,4 @@ sidecar/dist/
 notes/
 *.log
 .cargo-home/
+.rustup-home/

@@ -199,25 +199,40 @@ pub fn macos_resource_dir(exe: &Path) -> Option<PathBuf> {
 }
 
 fn bundled_node(exe: &Path) -> Option<PathBuf> {
-    let resources = macos_resource_dir(exe)?;
-    [
-        resources.join("bin/node"),
-        resources.join("sidecar/dist/bin/node"),
-        resources.join("_up_/sidecar/dist/bin/node"),
-    ]
-    .into_iter()
-    .find(|candidate| candidate.is_file())
+    resource_dirs(exe).into_iter().find_map(|resources| {
+        [
+            resources.join("bin/node"),
+            resources.join("bin/node.exe"),
+            resources.join("sidecar/dist/bin/node"),
+            resources.join("_up_/sidecar/dist/bin/node"),
+        ]
+        .into_iter()
+        .find(|candidate| candidate.is_file())
+    })
 }
 
 fn bundled_web_bin(exe: &Path) -> Option<PathBuf> {
-    let resources = macos_resource_dir(exe)?;
-    [
-        resources.join("app/lib/bin.js"),
-        resources.join("sidecar/dist/app/lib/bin.js"),
-        resources.join("_up_/sidecar/dist/app/lib/bin.js"),
-    ]
-    .into_iter()
-    .find(|candidate| candidate.is_file())
+    resource_dirs(exe).into_iter().find_map(|resources| {
+        [
+            resources.join("app/lib/bin.js"),
+            resources.join("sidecar/dist/app/lib/bin.js"),
+            resources.join("_up_/sidecar/dist/app/lib/bin.js"),
+        ]
+        .into_iter()
+        .find(|candidate| candidate.is_file())
+    })
+}
+
+fn resource_dirs(exe: &Path) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(macos) = macos_resource_dir(exe) {
+        dirs.push(macos);
+    }
+    if let Some(parent) = exe.parent() {
+        dirs.push(parent.to_path_buf());
+        dirs.push(parent.join("resources"));
+    }
+    dirs
 }
 
 fn home_dir() -> PathBuf {

@@ -49,10 +49,13 @@ pub unsafe fn kill_process_group(pgid: i32, sig: i32) -> std::io::Result<()> {
     }
 }
 
-/// Live `std::process::Child` plus its Unix process group.
+/// Live `std::process::Child` plus its Unix process group or Windows job.
 pub struct ChildTree<'a> {
     /// The spawned sidecar process.
     pub child: &'a mut std::process::Child,
+    /// Windows Job Object assigned at spawn. Not locally verified.
+    #[cfg(windows)]
+    pub job: Option<&'a crate::job::JobObject>,
 }
 
 impl ProcessTree for ChildTree<'_> {
@@ -61,10 +64,18 @@ impl ProcessTree for ChildTree<'_> {
         {
             let _ = unsafe { kill_process_group(self.child.id() as i32, libc::SIGTERM) };
         }
-        #[cfg(not(unix))]
+        #[cfg(windows)]
         {
-            // TODO(windows): assign the sidecar to a Job Object and terminate the job.
-            // Not locally verified on this machine. Best effort: kill the root pid.
+            // Not locally verified on this machine. Prefer the Job Object
+            // assigned at spawn so bash/pwsh/picker grandchildren die too.
+            if let Some(job) = self.job.as_ref() {
+                job.terminate();
+            } else {
+                let _ = self.child.kill();
+            }
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
             let _ = self.child.kill();
         }
     }
@@ -74,7 +85,15 @@ impl ProcessTree for ChildTree<'_> {
         {
             let _ = unsafe { kill_process_group(self.child.id() as i32, libc::SIGKILL) };
         }
-        #[cfg(not(unix))]
+        #[cfg(windows)]
+        {
+            if let Some(job) = self.job.as_ref() {
+                job.terminate();
+            } else {
+                let _ = self.child.kill();
+            }
+        }
+        #[cfg(not(any(unix, windows)))]
         {
             let _ = self.child.kill();
         }

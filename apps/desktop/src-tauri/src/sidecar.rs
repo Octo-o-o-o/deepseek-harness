@@ -37,6 +37,8 @@ pub struct SpawnedSidecar {
 /// Owned sidecar child.
 pub struct SidecarProcess {
     child: Child,
+    #[cfg(windows)]
+    job: Option<crate::job::JobObject>,
 }
 
 /// Failure to spawn or supervise the sidecar.
@@ -104,6 +106,17 @@ pub fn spawn_sidecar(spec: &SidecarSpec) -> Result<SpawnedSidecar, SidecarError>
         command.process_group(0);
     }
     let mut child = command.spawn().map_err(SidecarError::Spawn)?;
+    #[cfg(windows)]
+    let job = match crate::job::JobObject::create().and_then(|job| {
+        job.assign(&child)?;
+        Ok(job)
+    }) {
+        Ok(job) => Some(job),
+        Err(err) => {
+            eprintln!("desktop: Job Object assign failed (not locally verified): {err}");
+            None
+        }
+    };
     let stdout = child.stdout.take().ok_or_else(|| {
         SidecarError::Spawn(std::io::Error::other("sidecar stdout was not piped"))
     })?;
@@ -134,7 +147,11 @@ pub fn spawn_sidecar(spec: &SidecarSpec) -> Result<SpawnedSidecar, SidecarError>
     });
 
     Ok(SpawnedSidecar {
-        process: SidecarProcess { child },
+        process: SidecarProcess {
+            child,
+            #[cfg(windows)]
+            job,
+        },
         ready: rx,
     })
 }
@@ -176,6 +193,8 @@ impl SidecarProcess {
     pub fn shutdown(&mut self, grace: Duration) {
         let mut tree = ChildTree {
             child: &mut self.child,
+            #[cfg(windows)]
+            job: self.job.as_ref(),
         };
         shutdown_tree(&mut tree, grace, Instant::now, thread::sleep);
     }

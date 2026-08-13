@@ -5,6 +5,8 @@
 
 mod health;
 mod http;
+#[cfg(windows)]
+mod job;
 mod lock;
 mod logs;
 mod migrate;

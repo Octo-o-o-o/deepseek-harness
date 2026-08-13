@@ -218,7 +218,14 @@ async function installNodeRuntime() {
   if (actual !== expected) throw new Error(`sha256 mismatch for ${archive}`)
   await mkdir(binDir, { recursive: true })
   if (triple.startsWith('win32')) {
-    throw new Error('Windows unpack is implemented in CI; this host packs tar.gz')
+    const extractRoot = join(tmpdir(), `dsh-node-${NODE_VERSION}-${process.pid}`)
+    await rm(extractRoot, { recursive: true, force: true })
+    await mkdir(extractRoot, { recursive: true })
+    await run('tar', ['-xf', archivePath, '-C', extractRoot])
+    const extracted = join(extractRoot, archive.replace(/\.zip$/, ''), 'node.exe')
+    await cp(extracted, join(binDir, 'node.exe'))
+    await rm(extractRoot, { recursive: true, force: true })
+    return
   }
   const extractRoot = join(tmpdir(), `dsh-node-${NODE_VERSION}-${process.pid}`)
   await rm(extractRoot, { recursive: true, force: true })
@@ -244,7 +251,7 @@ async function exists(path) {
 }
 
 async function selfCheck() {
-  const node = join(binDir, 'node')
+  const node = process.platform === 'win32' ? join(binDir, 'node.exe') : join(binDir, 'node')
   const binJs = join(appDir, 'lib/bin.js')
   const home = join(tmpdir(), `dsh-pack-check-${String(process.pid)}`)
   await rm(home, { recursive: true, force: true })
