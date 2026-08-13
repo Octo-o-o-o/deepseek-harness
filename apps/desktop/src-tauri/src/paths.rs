@@ -1,0 +1,251 @@
+//! Resolve Node, the web CLI entry, DSH_HOME, and the sidecar working directory.
+
+use std::env;
+use std::path::{Path, PathBuf};
+
+/// Path resolution failure.
+#[derive(Debug, thiserror::Error)]
+pub enum PathError {
+    /// `node` is not on PATH and no bundled runtime was found.
+    #[error("node runtime not found")]
+    NodeNotFound,
+    /// `apps/cli/lib/bin.js` is missing from the checkout and the bundle.
+    #[error("dsh web entry not found")]
+    WebBinNotFound,
+}
+
+/// Default `DSH_HOME` for the desktop app (overridden by the `DSH_HOME` env).
+///
+/// # Returns
+/// macOS Application Support / Windows `%APPDATA%` location, or the env override.
+pub fn default_dsh_home() -> PathBuf {
+    if let Ok(value) = env::var("DSH_HOME") {
+        if !value.is_empty() {
+            return PathBuf::from(value);
+        }
+    }
+    platform_dsh_home()
+}
+
+#[cfg(target_os = "macos")]
+fn platform_dsh_home() -> PathBuf {
+    home_dir().join("Library/Application Support/DeepSeekHarness")
+}
+
+#[cfg(target_os = "windows")]
+fn platform_dsh_home() -> PathBuf {
+    if let Ok(appdata) = env::var("APPDATA") {
+        if !appdata.is_empty() {
+            return PathBuf::from(appdata).join("DeepSeekHarness");
+        }
+    }
+    home_dir().join("AppData/Roaming/DeepSeekHarness")
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn platform_dsh_home() -> PathBuf {
+    home_dir().join(".local/share/DeepSeekHarness")
+}
+
+/// Default sidecar cwd: last workspace from `desktop-state.json`, else `~/Documents`.
+///
+/// Stage D owns persistence of that file. Stage A uses the same default so the
+/// agent never treats the application install directory as a workspace.
+///
+/// # Parameters
+/// - `home`: desktop `DSH_HOME`.
+///
+/// # Returns
+/// A directory path to use as the sidecar `cwd`.
+pub fn default_workspace_cwd(home: &Path) -> PathBuf {
+    if let Ok(value) = env::var("DSH_WORKSPACE") {
+        if !value.is_empty() {
+            return PathBuf::from(value);
+        }
+    }
+    let state_path = home.join("desktop-state.json");
+    if let Ok(text) = std::fs::read_to_string(&state_path) {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
+            if let Some(workspace) = value.get("workspace").and_then(|item| item.as_str()) {
+                if !workspace.is_empty() {
+                    return PathBuf::from(workspace);
+                }
+            }
+        }
+    }
+    let documents = home_dir().join("Documents");
+    if documents.is_dir() {
+        documents
+    } else {
+        home_dir()
+    }
+}
+
+/// Locate `node`: `DSH_NODE_PATH`, bundled runtime, then PATH.
+///
+/// # Parameters
+/// - `exe`: current executable, used to find `.app/Contents/Resources`.
+///
+/// # Returns
+/// Absolute path to a Node binary.
+pub fn resolve_node(exe: &Path) -> Result<PathBuf, PathError> {
+    if let Ok(value) = env::var("DSH_NODE_PATH") {
+        if !value.is_empty() {
+            return Ok(PathBuf::from(value));
+        }
+    }
+    if let Some(bundled) = bundled_node(exe) {
+        if bundled.is_file() {
+            return Ok(bundled);
+        }
+    }
+    which("node").ok_or(PathError::NodeNotFound)
+}
+
+/// Locate `apps/cli/lib/bin.js`: env, bundled resources, then repo walk.
+///
+/// # Parameters
+/// - `exe`: current executable.
+/// - `cwd`: process working directory (additional walk root).
+///
+/// # Returns
+/// Absolute path to the built CLI entry.
+pub fn resolve_web_bin(exe: &Path, cwd: &Path) -> Result<PathBuf, PathError> {
+    if let Ok(value) = env::var("DSH_WEB_BIN") {
+        if !value.is_empty() {
+            return Ok(PathBuf::from(value));
+        }
+    }
+    if let Some(bundled) = bundled_web_bin(exe) {
+        if bundled.is_file() {
+            return Ok(bundled);
+        }
+    }
+    for start in [exe.to_path_buf(), cwd.to_path_buf()] {
+        if let Some(root) = find_repo_root(&start) {
+            let bin = root.join("apps/cli/lib/bin.js");
+            if bin.is_file() {
+                return Ok(bin);
+            }
+        }
+    }
+    Err(PathError::WebBinNotFound)
+}
+
+/// Walk parents looking for `pnpm-workspace.yaml` plus the built CLI entry.
+///
+/// # Parameters
+/// - `start`: file or directory to walk upward from.
+///
+/// # Returns
+/// Repository root when the checkout markers exist.
+pub fn find_repo_root(start: &Path) -> Option<PathBuf> {
+    let mut dir = if start.is_file() {
+        start.parent()?.to_path_buf()
+    } else {
+        start.to_path_buf()
+    };
+    loop {
+        if dir.join("pnpm-workspace.yaml").is_file() && dir.join("apps/cli/lib/bin.js").is_file() {
+            return Some(dir);
+        }
+        if !dir.pop() {
+            return None;
+        }
+    }
+}
+
+/// `.app/Contents/Resources` when `exe` lives in `Contents/MacOS`.
+///
+/// # Parameters
+/// - `exe`: current executable.
+///
+/// # Returns
+/// Resource directory for a packaged macOS app.
+pub fn macos_resource_dir(exe: &Path) -> Option<PathBuf> {
+    let macos = exe.parent()?;
+    if macos.file_name()?.to_str()? != "MacOS" {
+        return None;
+    }
+    Some(macos.parent()?.join("Resources"))
+}
+
+fn bundled_node(exe: &Path) -> Option<PathBuf> {
+    let resources = macos_resource_dir(exe)?;
+    let candidate = resources.join("sidecar/dist/bin/node");
+    Some(candidate)
+}
+
+fn bundled_web_bin(exe: &Path) -> Option<PathBuf> {
+    let resources = macos_resource_dir(exe)?;
+    Some(resources.join("sidecar/dist/app/apps/cli/lib/bin.js"))
+}
+
+fn home_dir() -> PathBuf {
+    env::var("HOME")
+        .or_else(|_| env::var("USERPROFILE"))
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("."))
+}
+
+fn which(name: &str) -> Option<PathBuf> {
+    let path = env::var_os("PATH")?;
+    for dir in env::split_paths(&path) {
+        let candidate = dir.join(name);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+        #[cfg(windows)]
+        {
+            let exe = dir.join(format!("{name}.exe"));
+            if exe.is_file() {
+                return Some(exe);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_dir() -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let dir = env::temp_dir().join(format!("dsh-desktop-paths-{nanos}"));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn workspace_cwd_reads_desktop_state() {
+        let home = temp_dir();
+        fs::write(
+            home.join("desktop-state.json"),
+            r#"{"workspace":"/tmp/dsh-workspace"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            default_workspace_cwd(&home),
+            PathBuf::from("/tmp/dsh-workspace")
+        );
+        let _ = fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn repo_root_walk_finds_checkout_markers() {
+        let root = temp_dir();
+        fs::create_dir_all(root.join("apps/cli/lib")).unwrap();
+        fs::write(root.join("pnpm-workspace.yaml"), "packages: []\n").unwrap();
+        fs::write(root.join("apps/cli/lib/bin.js"), "#!/usr/bin/env node\n").unwrap();
+        let nested = root.join("apps/desktop/src-tauri");
+        fs::create_dir_all(&nested).unwrap();
+        assert_eq!(find_repo_root(&nested), Some(root.clone()));
+        let _ = fs::remove_dir_all(root);
+    }
+}
