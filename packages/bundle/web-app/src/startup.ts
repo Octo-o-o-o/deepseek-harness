@@ -85,7 +85,7 @@ export function readDesktopAuthEnv(
       'web-startup: DSH_DESKTOP_TOKEN and DSH_DESKTOP_BOOTSTRAP_NONCE must both be set or both be absent',
     )
   }
-  if (!hasToken) return {}
+  if (token === undefined || token === '' || nonce === undefined || nonce === '') return {}
   return { desktopToken: token, desktopBootstrapNonce: nonce }
 }
 

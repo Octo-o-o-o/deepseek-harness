@@ -27,7 +27,7 @@
       "path": "../../host/frontend-static"
     },
     {
-      "path": "../../client/connection"
+      "path": "../../client/connection/tsconfig.host.json"
     },
     {
       "path": "../../host/webserver"
