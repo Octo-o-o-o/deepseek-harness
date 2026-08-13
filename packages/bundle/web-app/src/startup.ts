@@ -27,6 +27,17 @@ export interface WebStartupValues {
   port?: number
   /** Explicit `--trusted-host` authorities, in argument order. */
   trustedHosts: string[]
+  /**
+   * Per-launch desktop token from `DSH_DESKTOP_TOKEN`. Absent when the
+   * process did not set the paired desktop env, so `/api` stays the
+   * unauthenticated CLI default.
+   */
+  desktopToken?: string
+  /**
+   * One-time bootstrap nonce from `DSH_DESKTOP_BOOTSTRAP_NONCE`. Present
+   * only together with {@link WebStartupValues.desktopToken}.
+   */
+  desktopBootstrapNonce?: string
 }
 
 /** The web flag family, as commander parsed it. */
@@ -56,6 +67,29 @@ Examples:
 }
 
 /**
+ * Read the paired desktop auth env. Either both names are non-empty or both
+ * are absent; a lone variable is a load-time misconfiguration.
+ *
+ * @param env - process env, injectable in tests.
+ * @returns the token and nonce, or an empty object for the CLI default.
+ */
+export function readDesktopAuthEnv(
+  env: NodeJS.ProcessEnv = process.env,
+): Pick<WebStartupValues, 'desktopToken' | 'desktopBootstrapNonce'> {
+  const token = env.DSH_DESKTOP_TOKEN
+  const nonce = env.DSH_DESKTOP_BOOTSTRAP_NONCE
+  const hasToken = token !== undefined && token !== ''
+  const hasNonce = nonce !== undefined && nonce !== ''
+  if (hasToken !== hasNonce) {
+    throw new Error(
+      'web-startup: DSH_DESKTOP_TOKEN and DSH_DESKTOP_BOOTSTRAP_NONCE must both be set or both be absent',
+    )
+  }
+  if (token === undefined || token === '' || nonce === undefined || nonce === '') return {}
+  return { desktopToken: token, desktopBootstrapNonce: nonce }
+}
+
+/**
  * Parse and provide the Web invocation as an ordinary Cordis service. The
  * command's action publishes the flags this invocation named; `--host 0.0.0.0`
  * or a non-numeric `--port` is a usage error, so on rejection (and on `--help`)
@@ -63,6 +97,7 @@ Examples:
  * @param ctx - plugin context carrying the command line.
  */
 export function apply(ctx: Context): void {
+  const desktop = readDesktopAuthEnv()
   const program = webCommand()
   program.action(() => {
     const options = program.opts<WebOptions>()
@@ -75,6 +110,7 @@ export function apply(ctx: Context): void {
     ctx.provide(WEB_STARTUP_SERVICE, {
       ...options.host !== undefined && { host: options.host },
       ...options.port !== undefined && { port: Number(options.port) },
+      ...desktop,
       trustedHosts: options.trustedHost ?? [],
     } satisfies WebStartupValues)
   })

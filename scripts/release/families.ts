@@ -79,7 +79,7 @@ export abstract class ReleaseFamily {
   /**
    * Discover this family's members.
    * @param root - repository root.
-   * @returns Members sorted by directory, with names validated and deduplicated.
+   * @returns Members sorted by directory, with names validated and deduplicated. Private manifests are omitted.
    */
   members(root: string): ReleaseMember[] {
     const manifestPaths = globSync([...this.patterns], { cwd: root }).sort()
@@ -90,6 +90,8 @@ export abstract class ReleaseFamily {
     for (const manifestPath of manifestPaths) {
       const normalized = manifestPath.replaceAll('\\', '/')
       const manifest = readManifest(resolve(root, manifestPath))
+      // Private workspace leaves (the desktop shell) are host carriers, not npm releases.
+      if (manifest.private === true) continue
       const name = requireString(manifest, 'name', normalized)
       const version = requireString(manifest, 'version', normalized)
       if (name === WORKSPACE_ROOT_PACKAGE) throw new Error(`${normalized} selected the workspace root`)
@@ -103,6 +105,7 @@ export abstract class ReleaseFamily {
         manifest,
       })
     }
+    requirePublishableMembers(this.id, members)
     return members
   }
 
@@ -281,6 +284,17 @@ class VendorFamily extends ReleaseFamily {
 /** Every release family this module owns, in workflow order. */
 function releaseFamilies(): readonly ReleaseFamily[] {
   return [new DshFamily(), new VendorFamily()]
+}
+
+/**
+ * Fail closed when private-package filtering left a family empty.
+ * @param familyId - family identifier for the error.
+ * @param members - publishable members after omitting `private: true`.
+ */
+export function requirePublishableMembers(familyId: string, members: readonly ReleaseMember[]): void {
+  if (members.length === 0) {
+    throw new Error(`release family ${familyId} has no publishable members after omitting private packages`)
+  }
 }
 
 /**

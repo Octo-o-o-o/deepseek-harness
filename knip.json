@@ -17,6 +17,10 @@
     "vendor/*",
     "python/sdk-runtime"
   ],
+  "ignore": [
+    "apps/desktop/.cargo-home/**",
+    "apps/desktop/.rustup-home/**"
+  ],
   "ignoreDependencies": [
     "@yarnpkg/cli-dist",
     "lightningcss"
@@ -724,6 +728,22 @@
         "@types/react-dom",
         "react",
         "react-dom"
+      ]
+    },
+    "@deepseek-ai/dshd": {
+      "entry": [
+        "scripts/**/*.mjs"
+      ],
+      "project": [
+        "scripts/**/*.mjs"
+      ],
+      "ignore": [
+        "src-tauri/**",
+        "sidecar/**",
+        "notes/**",
+        "frontend/**",
+        ".cargo-home/**",
+        ".rustup-home/**"
       ]
     },
     "apps/cli": {

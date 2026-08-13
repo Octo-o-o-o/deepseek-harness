@@ -1,0 +1,118 @@
+:root {
+  color-scheme: dark;
+  --bg: #07080b;
+  --ink: #e8ece8;
+  --muted: #8b938c;
+  --line: #1c2420;
+  --accent: #7dffb3;
+  --danger: #ff8a7a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, #122018 0%, transparent 60%),
+    var(--bg);
+  color: var(--ink);
+  font: 15px/1.5 "Avenir Next", "Segoe UI", sans-serif;
+}
+
+main {
+  min-height: 100vh;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 0.7rem;
+  padding: 2rem;
+  text-align: center;
+}
+
+h1 {
+  margin: 1.2rem 0 0;
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+#status {
+  margin: 0;
+  color: var(--muted);
+}
+
+#detail {
+  max-width: 36rem;
+  margin: 0.4rem 0 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--danger);
+  text-align: left;
+  white-space: pre-wrap;
+}
+
+button {
+  margin-top: 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  padding: 0.45rem 0.95rem;
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: var(--accent);
+}
+
+.mark {
+  width: 56px;
+  height: 56px;
+  position: relative;
+}
+
+.ring,
+.core {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+}
+
+.ring {
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.core {
+  inset: 14px;
+  background: var(--accent);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+[data-state='loading'] .ring {
+  animation: pulse 1.4s ease-out infinite;
+}
+
+[data-state='error'] .core {
+  background: var(--danger);
+  box-shadow: none;
+}
+
+[data-state='error'] .ring {
+  border-color: color-mix(in srgb, var(--danger) 50%, transparent);
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(0.86);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}

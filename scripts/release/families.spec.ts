@@ -1,7 +1,7 @@
 /** Release family discovery, publish order, tag naming, and the bump judgements. */
 
 import { describe, expect, it } from 'vitest'
-import { releaseFamily, type ReleaseMember } from './families.ts'
+import { releaseFamily, requirePublishableMembers, type ReleaseMember } from './families.ts'
 import { compareVersions, nextVendorVersion, reachesPayload } from './bump.ts'
 
 /**
@@ -93,6 +93,12 @@ describe('release families', () => {
 
   it('rejects an unknown family identifier', () => {
     expect(() => { releaseFamily('native') }).toThrow(/unknown release family/)
+  })
+
+  it('fails closed when private filtering leaves no publishable members', () => {
+    expect(() => { requirePublishableMembers('dsh', []) })
+      .toThrow(/no publishable members after omitting private packages/)
+    expect(() => { requirePublishableMembers('dsh', [member('apps/cli', '@deepseek-ai/dsh')]) }).not.toThrow()
   })
 })
 

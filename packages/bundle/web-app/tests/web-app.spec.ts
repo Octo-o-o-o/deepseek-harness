@@ -13,6 +13,8 @@ import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import type { WebServer } from '@deepseek-ai/dsh-host-webserver'
 import { apply, Config, internals } from '../src/index.ts'
+import { injectDesktopBootstrapScript } from '../src/desktop-bootstrap.ts'
+import { WEB_STARTUP_SERVICE } from '../src/startup.ts'
 
 vi.mock('node:os', async importOriginal => ({
   ...await importOriginal<typeof import('node:os')>(),
@@ -44,18 +46,38 @@ function stageDist(): string {
 }
 
 /** A fake webServer capturing the fallback seat and index taps. */
-function fakeHttpServer(host: '127.0.0.1' | '0.0.0.0' = '127.0.0.1'): { server: WebServer; seat: () => unknown } {
+function fakeHttpServer(host: '127.0.0.1' | '0.0.0.0' = '127.0.0.1'): {
+  server: WebServer
+  seat: () => unknown
+  applyTaps: (html: string) => string
+} {
   let fallback: unknown
+  const taps: ((html: string) => string)[] = []
   const server = {
     host,
     port: 4567,
+    register: () => () => {},
+    listRegistrations: () => [
+      { kind: 'prefix' as const, path: '/api', owner: 'client-connection' },
+    ],
     registerFallback: (handler: unknown) => {
       fallback = handler
       return () => { fallback = undefined }
     },
-    applyIndexTaps: (html: string) => html,
+    tapIndex: (transform: (html: string) => string) => {
+      taps.push(transform)
+      return () => {
+        const at = taps.indexOf(transform)
+        if (at !== -1) taps.splice(at, 1)
+      }
+    },
+    applyIndexTaps: (html: string) => taps.reduce((acc, tap) => tap(acc), html),
   } as unknown as WebServer
-  return { server, seat: () => fallback }
+  return {
+    server,
+    seat: () => fallback,
+    applyTaps: html => taps.reduce((acc, tap) => tap(acc), html),
+  }
 }
 
 /** A fake Loader whose settlement the test controls (the URL line waits on it). */
@@ -215,6 +237,41 @@ describe('web-app runtime glue', () => {
     await new Promise(resolve => setTimeout(resolve, 0))
     await expect(ctx.systemPrompt.assemble()).rejects.toThrow('webServer service missing')
     await ctx.fiber.dispose()
+  })
+
+  it('does not register a bootstrap tap when webStartup has no desktop auth', async () => {
+    stageDist()
+    const ctx = new Context()
+    const { server, applyTaps } = fakeHttpServer()
+    ctx.provide('webServer', server)
+    apply(ctx, new Config({ printUrl: false, surfaceContext: false, trustedHosts: [] }))
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(applyTaps('<head></head>')).toBe('<head></head>')
+    await ctx.fiber.dispose()
+  })
+
+  it('injects a JSON-escaped nonce and never the token', async () => {
+    stageDist()
+    const ctx = new Context()
+    const { server, applyTaps } = fakeHttpServer()
+    ctx.provide('webServer', server)
+    ctx.provide(WEB_STARTUP_SERVICE, {
+      trustedHosts: [],
+      desktopToken: "ab<'>secret",
+      desktopBootstrapNonce: "ab<'>",
+    })
+    apply(ctx, new Config({ printUrl: false, surfaceContext: false, trustedHosts: [] }))
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const injected = applyTaps('<head></head><body>shell</body>')
+    expect(injected).toContain('window.__DSH_DESKTOP_BOOTSTRAP__')
+    expect(injected).not.toContain('secret')
+    expect(injected).not.toContain('__DSH_TOKEN__')
+    expect(injected.startsWith('<head>')).toBe(true)
+    await ctx.fiber.dispose()
+  })
+
+  it('prefixes html that has no head element', () => {
+    expect(injectDesktopBootstrapScript('plain', 'tok')).toMatch(/^<script>window\.__DSH_DESKTOP_BOOTSTRAP__/)
   })
 
   it('resolves the real built frontend dist through the package exports, failing loud unbuilt', () => {

@@ -13,8 +13,15 @@
  * belongs to the webserver config, and this fence is not an auth layer.
  */
 
+import { timingSafeEqual } from 'node:crypto'
 import type { IncomingHttpHeaders } from 'node:http'
 import { isLoopbackHostname } from './loopback-hostname.ts'
+
+/** HTTP header the desktop shell and browser client send when a token is configured. */
+export const DESKTOP_TOKEN_HEADER = 'x-dsh-token'
+
+/** Cookie name used on WebSocket upgrades (browsers cannot set custom WS headers). */
+export const DESKTOP_TOKEN_COOKIE = 'dsh-token'
 
 /** The request facts the fence reads from either HTTP representation. */
 interface ApiTrustRequest {
@@ -120,4 +127,50 @@ export function isTrustedApiRequest(request: ApiTrustRequest, trustedHosts: read
   } catch {
     return false
   }
+}
+
+/**
+ * Read the desktop token from `X-DSH-Token` or the `dsh-token` cookie.
+ *
+ * @param request - Node HTTP or Fetch request facts (headers).
+ * @returns the presented token, or undefined when neither carrier is set.
+ */
+export function readDesktopToken(request: ApiTrustRequest): string | undefined {
+  const fromHeader = header(request.headers, DESKTOP_TOKEN_HEADER)
+  if (fromHeader !== undefined && fromHeader !== '') return fromHeader
+  return cookieValue(header(request.headers, 'cookie'), DESKTOP_TOKEN_COOKIE)
+}
+
+/**
+ * Whether a request satisfies the optional per-launch desktop token.
+ * Absent/empty expected token is a no-op so CLI `dsh web` stays unchanged.
+ *
+ * @param request - Node HTTP or Fetch request facts (headers).
+ * @param expected - configured token; empty/undefined skips the check.
+ * @returns true when no token is required, or the presented token matches.
+ */
+export function hasValidDesktopToken(request: ApiTrustRequest, expected: string | undefined): boolean {
+  if (expected === undefined || expected === '') return true
+  const provided = readDesktopToken(request)
+  if (provided === undefined) return false
+  const left = Buffer.from(provided)
+  const right = Buffer.from(expected)
+  if (left.length !== right.length) return false
+  return timingSafeEqual(left, right)
+}
+
+function cookieValue(cookieHeader: string | undefined, name: string): string | undefined {
+  if (cookieHeader === undefined) return undefined
+  for (const part of cookieHeader.split(';')) {
+    const trimmed = part.trim()
+    const eq = trimmed.indexOf('=')
+    if (eq <= 0) continue
+    if (trimmed.slice(0, eq) !== name) continue
+    try {
+      return decodeURIComponent(trimmed.slice(eq + 1))
+    } catch {
+      return undefined
+    }
+  }
+  return undefined
 }

@@ -1,0 +1,17 @@
+{
+  "name": "@deepseek-ai/dshd",
+  "private": true,
+  "version": "0.1.0",
+  "description": "dshd: Tauri 2 desktop shell for DeepSeek Harness",
+  "type": "module",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build --bundles app && node scripts/pack-sidecar.mjs embed",
+    "pack": "node scripts/pack-sidecar.mjs"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.0"
+  }
+}

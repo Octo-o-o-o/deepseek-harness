@@ -1,4 +1,5 @@
 import type { HostDescription, IApiClient, HostFrame, MuxFrame, RpcRequest } from './api.ts'
+import { awaitDesktopBootstrap, signalDesktopReady } from './desktop-bootstrap.ts'
 
 /** Reconnect/backoff tunables (deployment-varying — no hardcoded tunables; these become the
  *  future `ctx.connection` plugin's Config). All fields optional; defaults below. */
@@ -130,6 +131,7 @@ export class ConnectionController {
       })
 
       try {
+        await awaitDesktopBootstrap()
         // Strict readiness handshake: describe proves unary reachability, onOpen
         // proves each physical stream is established before any frame —
         // only then may onConnected fire, so the resync it triggers cannot outrun the
@@ -146,6 +148,7 @@ export class ConnectionController {
           throw new Error(`host.describe failed: ${descriptionResult.error.code}: ${descriptionResult.error.message}`)
         }
         if (ac.signal.aborted) throw new Error('generation aborted during readiness handshake')
+        await signalDesktopReady()
         this.attempt = 0
         this.emitState('connected')
         // A state sink may synchronously stop this controller. Do not publish

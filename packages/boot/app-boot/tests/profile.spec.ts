@@ -256,6 +256,37 @@ describe('healProfilesModuleFallback', () => {
     expect(readlinkSync(join(fallback, 'dsh-app'))).toContain('app')
   })
 
+  it('follows a hoisted symlink into the isolated store when walking the closure', () => {
+    const root = tmp()
+    const appDir = join(root, 'app')
+    const isolated = join(appDir, 'node_modules', '.pnpm', 'bundle-a@0.0.0', 'node_modules')
+    mkdirSync(join(isolated, 'bundle-a'), { recursive: true })
+    mkdirSync(join(isolated, 'dep-of-a'), { recursive: true })
+    writeFileSync(join(isolated, 'bundle-a', 'package.json'), JSON.stringify({
+      name: 'bundle-a',
+      version: '0.0.0',
+      dependencies: { 'dep-of-a': '0.0.0' },
+    }))
+    writeFileSync(join(isolated, 'dep-of-a', 'package.json'), JSON.stringify({
+      name: 'dep-of-a',
+      version: '0.0.0',
+    }))
+    mkdirSync(join(appDir, 'node_modules'), { recursive: true })
+    symlinkSync(join(isolated, 'bundle-a'), join(appDir, 'node_modules', 'bundle-a'), 'junction')
+    writeFileSync(join(appDir, 'package.json'), JSON.stringify({
+      name: 'dsh-app',
+      dependencies: { 'bundle-a': '0.0.0' },
+    }))
+    const home = tmp()
+    healProfilesModuleFallback(join(appDir, 'package.json'), home)
+    const fallback = join(home, 'profiles', 'node_modules')
+    expect(lstatSync(join(fallback, 'bundle-a')).isSymbolicLink()).toBe(true)
+    expect(lstatSync(join(fallback, 'dep-of-a')).isSymbolicLink()).toBe(true)
+    expect(readlinkSync(join(fallback, 'dep-of-a'))).toContain(`${join('node_modules', '.pnpm')}`)
+    rmSync(root, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
+  })
+
   it('tolerates losing the concurrent-heal race to an identical link and rejects a different one', () => {
     // The EEXIST arm: a second process wrote the link between our lstat miss
     // and symlinkSync. Simulated by pre-creating the correct link and calling

@@ -21,6 +21,18 @@ import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-shell-env'
+import {
+  assertDesktopApiExclusive,
+  BOOTSTRAP_PATH,
+  DesktopBootstrap,
+  handleDesktopBootstrap,
+  handleDesktopReady,
+  handleDesktopStatus,
+  injectDesktopBootstrapScript,
+  READY_PATH,
+  STATUS_PATH,
+} from './desktop-bootstrap.ts'
+import { WEB_STARTUP_SERVICE, type WebStartupValues } from './startup.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'web-app'
@@ -126,6 +138,19 @@ function resolveDistIndex(): string {
 /** Test hook: hosts with no built frontend dist substitute the resolver; production never touches this. */
 export const internals: { resolveDistIndex: () => string } = { resolveDistIndex }
 
+function desktopBootstrapFromStartup(ctx: Context): DesktopBootstrap | undefined {
+  const startup = ctx.get(WEB_STARTUP_SERVICE) as WebStartupValues | undefined
+  const token = startup?.desktopToken
+  const nonce = startup?.desktopBootstrapNonce
+  const hasToken = token !== undefined && token !== ''
+  const hasNonce = nonce !== undefined && nonce !== ''
+  if (hasToken !== hasNonce) {
+    throw new Error('web-app: desktop token and bootstrap nonce must both be set')
+  }
+  if (!hasToken || !hasNonce) return undefined
+  return new DesktopBootstrap(token, nonce)
+}
+
 /**
  * Mount the Web runtime: dist serving, surface prompt, the bash runtime
  * variable, and the URL line.
@@ -136,6 +161,37 @@ export function apply(ctx: Context, config: Config): void {
   const runtime = resolveLanTrust(ctx.webServer.host, config.trustedHosts)
   // Release dependent rows only after bind-dependent trust has been sampled once.
   ctx.provide(WEB_RUNTIME_SERVICE, runtime)
+  const desktop = desktopBootstrapFromStartup(ctx)
+  if (desktop !== undefined) {
+    ctx.effect(
+      () => ctx.webServer.tapIndex(html => injectDesktopBootstrapScript(html, desktop.nonce)),
+      'web-app: desktop bootstrap',
+    )
+    ctx.effect(
+      () => ctx.webServer.register({
+        kind: 'exact',
+        path: BOOTSTRAP_PATH,
+        handler: (req, res) => { void handleDesktopBootstrap(req, res, desktop) },
+      }),
+      'web-app: /__dshd_bootstrap',
+    )
+    ctx.effect(
+      () => ctx.webServer.register({
+        kind: 'exact',
+        path: READY_PATH,
+        handler: (req, res) => { handleDesktopReady(req, res, desktop) },
+      }),
+      'web-app: /__dshd_ready',
+    )
+    ctx.effect(
+      () => ctx.webServer.register({
+        kind: 'exact',
+        path: STATUS_PATH,
+        handler: (req, res) => { handleDesktopStatus(req, res, desktop) },
+      }),
+      'web-app: /__dshd_status',
+    )
+  }
   ctx.plugin(FrontendStatic, { distIndex: internals.resolveDistIndex() })
   if (config.surfaceContext) {
     ctx.inject(['systemPrompt'], (promptCtx) => {
@@ -156,30 +212,31 @@ export function apply(ctx: Context, config: Config): void {
       })
     })
   }
-  if (config.printUrl) {
+  const printUrl = (): void => {
+    // Reuse the exact LAN snapshot provided to the /api trust fence.
+    const lanCandidate = runtime.lanAddresses[0]
+    const port = ctx.webServer.port
+    console.log(`dsh web: ${localWebUrl(ctx)}${lanCandidate === undefined ? '' : ` (LAN: http://${lanCandidate}:${String(port)})`}`)
+  }
+  const afterSettle = (): void => {
+    // The tree can be disposed while the boot was in flight (early
+    // SIGTERM); a URL line for a dead server would only mislead, and
+    // reading the torn-down port would turn a clean shutdown into a crash.
+    if (ctx.get('webServer') === undefined) return
+    if (desktop !== undefined) {
+      assertDesktopApiExclusive(ctx.webServer.listRegistrations())
+    }
+    if (config.printUrl) printUrl()
+  }
+  if (desktop !== undefined || config.printUrl) {
     // The URL line is a readiness signal: supervisors (and the keyless CLI
     // smoke) RPC as soon as they observe it, so it must not print while
     // sibling rows (the /api route owner) are still mounting. Await Loader
     // settlement first; a hand-built tree without a Loader prints at once.
-    const printUrl = (): void => {
-      // Reuse the exact LAN snapshot provided to the /api trust fence.
-      const lanCandidate = runtime.lanAddresses[0]
-      const port = ctx.webServer.port
-      console.log(`dsh web: ${localWebUrl(ctx)}${lanCandidate === undefined ? '' : ` (LAN: http://${lanCandidate}:${String(port)})`}`)
-    }
-    // This row's own activation can precede a sibling failure. The app owns
-    // readiness by waiting for its Loader tree, or prints at once in a
-    // hand-built context without Loader.
     const settled = ctx.get('loader')?.await()
-    if (settled === undefined) printUrl()
+    if (settled === undefined) afterSettle()
     else {
-      void settled.then(() => {
-        // The tree can be disposed while the boot was in flight (early
-        // SIGTERM); a URL line for a dead server would only mislead, and
-        // reading the torn-down port would turn a clean shutdown into a crash.
-        if (ctx.get('webServer') !== undefined) printUrl()
-      // Loader reports a failed boot; this row only stays quiet.
-      }, () => {})
+      void settled.then(afterSettle, () => {})
     }
   }
 }

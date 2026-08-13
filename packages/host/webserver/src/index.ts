@@ -24,6 +24,18 @@ declare module '@deepseek-ai/cordis' {
 /** Route match kind: 'exact' matches the pathname verbatim; 'prefix' p matches p and p/<anything>. */
 export type WebRouteKind = 'exact' | 'prefix'
 
+/** Kind recorded by {@link WebServer.listRegistrations}. */
+export type WebRegistrationKind = WebRouteKind | 'upgrade' | 'fallback'
+
+/** One live registration for composition audit. */
+export interface WebRegistration {
+  kind: WebRegistrationKind
+  /** Absolute pathname, or `*` for the fallback seat. */
+  path: string
+  /** Plugin id that claimed the route; `unknown` when the caller omitted it. */
+  owner: string
+}
+
 /** One named route registration. */
 export interface WebRoute {
   kind: WebRouteKind
@@ -31,6 +43,8 @@ export interface WebRoute {
   path: string
   /** Owns the full response lifecycle (may hold the response open, e.g. SSE). */
   handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>
+  /** Registration owner for desktop `/api` audit. */
+  owner?: string
 }
 
 /** One exact-path HTTP upgrade registration. */
@@ -39,6 +53,8 @@ export interface WebUpgradeRoute {
   path: string
   /** Owns protocol negotiation and the upgraded socket after dispatch. */
   handler: (req: IncomingMessage, socket: Duplex, head: Buffer) => void | Promise<void>
+  /** Registration owner for desktop `/api` audit. */
+  owner?: string
 }
 
 /** Gateway config: the listen address. */
@@ -67,6 +83,7 @@ export class WebServer extends Service {
   private readonly upgrades = new Map<string, WebUpgradeRoute>()
   private readonly upgradedSockets = new Set<Duplex>()
   private readonly indexTaps: ((html: string) => string)[] = []
+  private readonly registrations: WebRegistration[] = []
   private fallback: WebRoute['handler'] | undefined
   private server!: Server
   private listenedPort!: number
@@ -97,7 +114,11 @@ export class WebServer extends Service {
       throw new Error(`webserver: duplicate ${route.kind} route "${route.path}"`)
     }
     table.set(route.path, route)
-    return () => { table.delete(route.path) }
+    const forget = this.record(route.kind, route.path, route.owner)
+    return () => {
+      table.delete(route.path)
+      forget()
+    }
   }
 
   /**
@@ -111,7 +132,11 @@ export class WebServer extends Service {
       throw new Error(`webserver: duplicate upgrade route "${route.path}"`)
     }
     this.upgrades.set(route.path, route)
-    return () => { this.upgrades.delete(route.path) }
+    const forget = this.record('upgrade', route.path, route.owner)
+    return () => {
+      this.upgrades.delete(route.path)
+      forget()
+    }
   }
 
   /**
@@ -120,14 +145,37 @@ export class WebServer extends Service {
    * owner only — a second registration throws, because two fallbacks cannot
    * compose.
    * @param handler - owns the full response lifecycle of unmatched requests.
+   * @param owner - registration owner for composition audit.
    * @returns the disposer releasing the seat.
    */
-  registerFallback(handler: WebRoute['handler']): () => void {
+  registerFallback(handler: WebRoute['handler'], owner = 'unknown'): () => void {
     if (this.fallback !== undefined) {
       throw new Error('webserver: fallback already registered')
     }
     this.fallback = handler
-    return () => { this.fallback = undefined }
+    const forget = this.record('fallback', '*', owner)
+    return () => {
+      this.fallback = undefined
+      forget()
+    }
+  }
+
+  /**
+   * Snapshot of named HTTP, upgrade, and fallback registrations.
+   *
+   * @returns a copy of each live registration's kind, path, and owner.
+   */
+  listRegistrations(): WebRegistration[] {
+    return this.registrations.slice()
+  }
+
+  private record(kind: WebRegistrationKind, path: string, owner: string | undefined): () => void {
+    const entry: WebRegistration = { kind, path, owner: owner ?? 'unknown' }
+    this.registrations.push(entry)
+    return () => {
+      const at = this.registrations.indexOf(entry)
+      if (at !== -1) this.registrations.splice(at, 1)
+    }
   }
 
   /**
