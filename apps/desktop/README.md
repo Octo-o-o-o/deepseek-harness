@@ -14,7 +14,7 @@ Tauri 2 shell that starts a local `dsh web` sidecar on `127.0.0.1`, waits for th
 ┌─────────────────────────────────────────────┐
 │  Node sidecar (bundled runtime + deploy)    │
 │    dsh web --port 0 --host 127.0.0.1        │
-│    --desktop-token <per-launch hex>         │
+│    env DSH_DESKTOP_TOKEN + BOOTSTRAP_NONCE  │
 └─────────────────────────────────────────────┘
 ```
 
@@ -66,7 +66,7 @@ First launch copies `sessions`, `settings`, `attachments`, `storages`, and `prof
 
 ## Token
 
-The shell always generates a per-launch hex token and passes `--desktop-token`. The Web index injects `window.__DSH_TOKEN__`; the connection layer sends `X-DSH-Token` / cookie `dsh-token`. The token is not put in the URL or logs. `dsh web` without the flag is unchanged.
+The shell always generates a per-launch hex token and a bootstrap nonce and injects them as `DSH_DESKTOP_TOKEN` / `DSH_DESKTOP_BOOTSTRAP_NONCE`. The Web index receives only the nonce; `POST /__dshd_bootstrap` sets an HttpOnly `dsh-token` cookie for `/api`. The shell self-check uses `X-DSH-Token` and waits for `/__dshd_status` after the WebView client posts `/__dshd_ready`. The token is not put in argv, the URL, or logs. `dsh web` without those env vars is unchanged.
 
 ## Known limits
 

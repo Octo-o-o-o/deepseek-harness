@@ -1,4 +1,4 @@
-# Agent Note: 桌面 per-launch token 在 CLI 上缺省无感，壳内必带
+# Agent Note: 桌面 per-launch token 走 env 与 HttpOnly cookie
 
 Status: implemented
 
@@ -6,18 +6,18 @@ Status: implemented
 
 ## 问题
 
-回环 `/api` 是可达性围栏，不是认证。本机任意进程都能 POST，也能打开两条下行 WebSocket。打包后的桌面应用必须挡住这一点，又不能改变 CLI 用户的 `dsh web`。
+回环 `/api` 是可达性围栏，不是认证。把 per-launch token 放进 argv（`ps` / `/proc/cmdline`）或未认证的 index（`window.__DSH_TOKEN__`），本机任意进程都能偷走并调用 `/api`。
 
 ## 决策
 
-`--desktop-token <tok>` 缺省为空：没有 flag 就不校验、不注入页面。有 token 时，`dsh-web-app` 通过 tapIndex 写入 `window.__DSH_TOKEN__`（转义，不进日志）。连接层对 `X-DSH-Token` 或 cookie `dsh-token` 做常数时间比较，失败则 401 / 拒绝 upgrade。桌面壳每次启动都生成 hex token、带上 flag，并在进入 `Visible` 之前探测 `POST /api/host.describe` 以及 `/api/events.mux` 与 `/api/events.host` 的升级。
+壳注入成对的 `DSH_DESKTOP_TOKEN` 与 `DSH_DESKTOP_BOOTSTRAP_NONCE`。只设其中一个会让 web-startup 加载失败。index 只拿到 nonce（`JSON.stringify` 再转义角括号）。`POST /__dshd_bootstrap` 在 30s 内单次消费 nonce，并设置 `Set-Cookie: dsh-token=…; Path=/api; HttpOnly; SameSite=Strict`（`/__dshd_ready` 再写一条同名 cookie）。连接层 node 半仍接受 `X-DSH-Token` 或该 cookie，方便壳自检而不走 bootstrap。两条下行都建立后浏览器 POST `/__dshd_ready`；壳用 `X-DSH-Bootstrap` 轮询 `/__dshd_status` 再进入 `Visible`。没有这对环境变量则保持未经认证的 CLI 默认。
 
 ## 考虑过的替代方案
 
-**带 OS ACL 的 Unix domain socket / named pipe。** 更强，留到之后的 M1 评估。
+**保留 `--desktop-token`，只是不再打日志。** 同用户下每个进程仍能读 argv。
 
-**把 token 放进就绪行 URL。** 会进日志和进程列表。
+**经 Tauri IPC 把 token 交给 renderer。** JS 里仍是 bearer。HttpOnly cookie 加上壳只用 header 自检，让页面拿不到秘密。
 
 ## 后果
 
-不带 flag 时，既有 CLI 和 `test:gui` 行为不变。带 flag 时，无头访问 `/api` 为 401。token 不进 URL，也不写 sidecar 日志。
+不带成对环境变量的 `dsh web` 行为不变。已消费或过期的 nonce 不能再换 cookie。桌面 Loader settle 后，owner 不是 `client-connection` 的 `/api` 注册会被拒绝。
