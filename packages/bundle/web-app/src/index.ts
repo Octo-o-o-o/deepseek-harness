@@ -21,6 +21,7 @@ import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-shell-env'
+import { WEB_STARTUP_SERVICE, type WebStartupValues } from './startup.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'web-app'
@@ -127,6 +128,47 @@ function resolveDistIndex(): string {
 export const internals: { resolveDistIndex: () => string } = { resolveDistIndex }
 
 /**
+ * Escape a desktop token so it can sit inside a single-quoted script literal.
+ * `<` is encoded so a token cannot break out of the script element.
+ *
+ * @param token - raw per-launch token.
+ * @returns a JavaScript string literal body.
+ */
+export function escapeDesktopTokenForScript(token: string): string {
+  return token
+    .replaceAll('\\', '\\\\')
+    .replaceAll('\'', '\\\'')
+    .replaceAll('<', '\\u003c')
+    .replaceAll('>', '\\u003e')
+    .replaceAll('\u2028', '\\u2028')
+    .replaceAll('\u2029', '\\u2029')
+}
+
+/**
+ * Inject `window.__DSH_TOKEN__` and a same-origin cookie (WebSocket cannot set
+ * custom headers; the Cookie header is how the upgrade carries the token).
+ *
+ * @param html - index.html body.
+ * @param token - per-launch token; never logged.
+ * @returns html with the token script inserted.
+ */
+export function injectDesktopTokenScript(html: string, token: string): string {
+  const escaped = escapeDesktopTokenForScript(token)
+  const cookie = encodeURIComponent(token)
+  const snippet = `<script>window.__DSH_TOKEN__='${escaped}';document.cookie='dsh-token=${cookie};path=/;SameSite=Strict';</script>`
+  const head = html.indexOf('<head>')
+  if (head === -1) return `${snippet}${html}`
+  const insertAt = head + '<head>'.length
+  return `${html.slice(0, insertAt)}${snippet}${html.slice(insertAt)}`
+}
+
+function desktopTokenFromStartup(ctx: Context): string | undefined {
+  const startup = ctx.get(WEB_STARTUP_SERVICE) as WebStartupValues | undefined
+  const token = startup?.desktopToken
+  return token !== undefined && token !== '' ? token : undefined
+}
+
+/**
  * Mount the Web runtime: dist serving, surface prompt, the bash runtime
  * variable, and the URL line.
  * @param ctx - plugin context carrying the webServer service.
@@ -136,6 +178,13 @@ export function apply(ctx: Context, config: Config): void {
   const runtime = resolveLanTrust(ctx.webServer.host, config.trustedHosts)
   // Release dependent rows only after bind-dependent trust has been sampled once.
   ctx.provide(WEB_RUNTIME_SERVICE, runtime)
+  const desktopToken = desktopTokenFromStartup(ctx)
+  if (desktopToken !== undefined) {
+    ctx.effect(
+      () => ctx.webServer.tapIndex(html => injectDesktopTokenScript(html, desktopToken)),
+      'web-app: desktop token',
+    )
+  }
   ctx.plugin(FrontendStatic, { distIndex: internals.resolveDistIndex() })
   if (config.surfaceContext) {
     ctx.inject(['systemPrompt'], (promptCtx) => {

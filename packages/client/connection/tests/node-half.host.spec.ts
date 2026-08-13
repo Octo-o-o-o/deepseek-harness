@@ -74,7 +74,7 @@ function fakeResponse(): { response: ServerResponse; state: { status?: number; b
   return { response, state }
 }
 
-async function mounted(config?: { trustedHosts?: string[] }): Promise<{
+async function mounted(config?: { trustedHosts?: string[]; desktopToken?: string }): Promise<{
   routes: WebRoute[]
   upgrades: WebUpgradeRoute[]
   dispose: () => Promise<void>
@@ -150,6 +150,23 @@ describe('connection node half', () => {
     await dispose()
   })
 
+  it('answers 401 when a desktop token is configured and the request omits it', async () => {
+    const { routes, upgrades, dispose } = await mounted({ desktopToken: 'abc' })
+    const missing = fakeResponse()
+    await routes[0]!.handler(fakeRequest({ host: '127.0.0.1:3080' }), missing.response)
+    expect(missing.state.status).toBe(401)
+    expect(missing.state.body).toBe('unauthorized')
+    const ok = fakeResponse()
+    await routes[0]!.handler(fakeRequest({ host: '127.0.0.1:3080', 'x-dsh-token': 'abc' }), ok.response)
+    expect(ok.state.status).not.toBe(401)
+    const rejected: Buffer[] = []
+    const socket = new PassThrough()
+    socket.on('data', (chunk) => { rejected.push(Buffer.from(chunk)) })
+    upgrades[0]!.handler(fakeRequest({ host: '127.0.0.1:3080' }, MUX_EVENTS_PATH), socket, Buffer.alloc(0))
+    expect(Buffer.concat(rejected).toString()).toContain('401 Unauthorized')
+    await dispose()
+  })
+
   it('refuses an untrusted Host on any /api path before the bridge runs', async () => {
     const { routes, dispose } = await mounted()
     const { response, state } = fakeResponse()
@@ -211,6 +228,22 @@ describe('connection node half', () => {
     }), declared.response)
     expect(declared.state.status).toBe(404)
     await dispose()
+  })
+
+  it('requires the desktop token on a dedicated RPC channel', async () => {
+    const ctx = new Context()
+    const routes: WebRoute[] = []
+    ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
+    const fiber = ctx.plugin({ inject: [...inject], apply }, { desktopToken: 'abc' })
+    await fiber.await()
+    const connection = ctx.get('connection') as HostConnectionHandle
+    connection.rpc.handle('/rpc', async () => ({ ok: true, value: { accepted: true } }), { authority: 'trusted-host' })
+    const route = routes.find(candidate => candidate.path === '/rpc')
+    expect(route).toBeDefined()
+    const denied = fakeResponse()
+    await route!.handler(fakeRequest({ host: '127.0.0.1:3080' }, '/rpc/goals/create'), denied.response)
+    expect(denied.state.status).toBe(401)
+    await fiber.dispose()
   })
 
   it('provides a disposable dedicated RPC channel without requiring apiProxy', async () => {

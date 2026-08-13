@@ -27,6 +27,11 @@ export interface WebStartupValues {
   port?: number
   /** Explicit `--trusted-host` authorities, in argument order. */
   trustedHosts: string[]
+  /**
+   * `--desktop-token`, absent when the invocation did not name one or named
+   * the empty string. Empty means the /api fence stays unauthenticated.
+   */
+  desktopToken?: string
 }
 
 /** The web flag family, as commander parsed it. */
@@ -34,6 +39,7 @@ interface WebOptions {
   host?: string
   port?: string
   trustedHost?: string[]
+  desktopToken?: string
 }
 
 /**
@@ -48,6 +54,7 @@ function webCommand(): Command {
     .option('--host <host>', 'bind host')
     .option('--port <port>', 'listen port; pass 0 to let the OS pick a free one')
     .option('--trusted-host <authority...>', 'extra authority the /api browser-trust fence accepts (host or host:port; repeatable)')
+    .option('--desktop-token <tok>', 'per-launch token the /api fence requires when set; omit for the unauthenticated CLI default')
     .addHelpText('after', `
 Examples:
   dsh --profile web                          serve on the composed host and port
@@ -75,6 +82,7 @@ export function apply(ctx: Context): void {
     ctx.provide(WEB_STARTUP_SERVICE, {
       ...options.host !== undefined && { host: options.host },
       ...options.port !== undefined && { port: Number(options.port) },
+      ...options.desktopToken !== undefined && options.desktopToken !== '' && { desktopToken: options.desktopToken },
       trustedHosts: options.trustedHost ?? [],
     } satisfies WebStartupValues)
   })

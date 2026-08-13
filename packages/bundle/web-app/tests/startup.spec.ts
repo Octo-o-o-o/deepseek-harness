@@ -102,6 +102,14 @@ describe('web command-line provider', () => {
     expect(observed.exits).toEqual([])
   })
 
+  it('publishes --desktop-token only when the invocation names a non-empty value', async () => {
+    const named = await bootProvider(['--desktop-token', 'abc'])
+    expect(named.values).toEqual({ trustedHosts: [], desktopToken: 'abc' })
+    const empty = await bootProvider(['--desktop-token', ''])
+    expect(empty.values).toEqual({ trustedHosts: [] })
+    expect(empty.values?.desktopToken).toBeUndefined()
+  })
+
   it('leaves deployment values to each consumer when flags omit them', async () => {
     const { values, observed } = await bootProvider([])
     expect(values).toEqual({ trustedHosts: [] })

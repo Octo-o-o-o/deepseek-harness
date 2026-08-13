@@ -142,12 +142,26 @@ export class WebSocketDownlinks {
  * @param socket - Raw HTTP socket that remains owned by the caller.
  */
 export function rejectWebSocketUpgrade(socket: Duplex): void {
+  rejectWebSocket(socket, 403, 'forbidden')
+}
+
+/**
+ * Reject an upgrade that failed the desktop token check.
+ *
+ * @param socket - Raw HTTP socket that remains owned by the caller.
+ */
+export function rejectWebSocketUnauthorized(socket: Duplex): void {
+  rejectWebSocket(socket, 401, 'unauthorized')
+}
+
+function rejectWebSocket(socket: Duplex, status: 401 | 403, body: 'forbidden' | 'unauthorized'): void {
+  const reason = status === 401 ? 'Unauthorized' : 'Forbidden'
   socket.end([
-    'HTTP/1.1 403 Forbidden',
+    `HTTP/1.1 ${String(status)} ${reason}`,
     'Connection: close',
     'Content-Type: text/plain; charset=utf-8',
-    'Content-Length: 9',
+    `Content-Length: ${String(Buffer.byteLength(body))}`,
     '',
-    'forbidden',
+    body,
   ].join('\r\n'))
 }

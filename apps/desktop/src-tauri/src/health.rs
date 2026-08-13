@@ -1,4 +1,4 @@
-//! Loader-ready probe: GET `/` must be 200 and contain `__DSH_BOOT__`.
+//! Loader-ready and host-ready probes.
 
 use std::time::Duration;
 
@@ -40,6 +40,40 @@ pub fn check_loader_ready(port: u16) -> Result<(), HealthError> {
     }
     if !response.body.contains("__DSH_BOOT__") {
         return Err(HealthError::MissingBootMarker);
+    }
+    Ok(())
+}
+
+/// JSON body for `POST /api/host.describe` (client-request envelope).
+///
+/// # Returns
+/// A serialized client-request whose method matches the path.
+pub fn host_describe_body() -> String {
+    "{\"type\":\"client-request\",\"rpcId\":\"desktop-boot\",\"method\":\"host.describe\",\"payload\":{}}"
+        .to_string()
+}
+
+/// POST `/api/host.describe` with the desktop token and require HTTP 200.
+///
+/// # Parameters
+/// - `port`: sidecar loopback port.
+/// - `token`: per-launch token; sent only as `X-DSH-Token`.
+///
+/// # Returns
+/// `Ok(())` when the host handshake succeeds.
+pub fn check_host_described(port: u16, token: &str) -> Result<(), HealthError> {
+    let body = host_describe_body();
+    let response = http_request(
+        "POST",
+        "127.0.0.1",
+        port,
+        "/api/host.describe",
+        &[("Content-Type", "application/json"), ("X-DSH-Token", token)],
+        Some(body.as_bytes()),
+        Duration::from_secs(5),
+    )?;
+    if response.status != 200 {
+        return Err(HealthError::BadStatus(response.status));
     }
     Ok(())
 }
@@ -90,5 +124,24 @@ mod tests {
             check_loader_ready(port),
             Err(HealthError::BadStatus(503))
         ));
+    }
+
+    #[test]
+    fn host_describe_requires_200() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0_u8; 2048];
+            let n = stream.read(&mut buf).unwrap_or(0);
+            let request = String::from_utf8_lossy(&buf[..n]);
+            assert!(request.contains("POST /api/host.describe"));
+            assert!(request.contains("X-DSH-Token: abc"));
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}")
+                .unwrap();
+        });
+        check_host_described(port, "abc").unwrap();
+        assert!(host_describe_body().contains("host.describe"));
     }
 }

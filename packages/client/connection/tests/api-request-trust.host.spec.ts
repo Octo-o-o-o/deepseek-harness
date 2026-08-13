@@ -1,7 +1,7 @@
 /** Behavior of the /api browser-trust fence (rebinding + cross-site defense). */
 
 import { describe, expect, it } from 'vitest'
-import { assertTrustedAuthority, isTrustedApiRequest } from '../src/api-request-trust.ts'
+import { assertTrustedAuthority, hasValidDesktopToken, isTrustedApiRequest } from '../src/api-request-trust.ts'
 
 function request(headers: Record<string, string | undefined>): { headers: Record<string, string | undefined> } {
   return { headers }
@@ -104,5 +104,26 @@ describe('isTrustedApiRequest', () => {
     expect(isTrustedApiRequest(request({ ...markers, host: 'bad host' }), [])).toBe(false)
     expect(isTrustedApiRequest(request({ ...markers, host: '127.0.0.999' }), [])).toBe(false)
     expect(isTrustedApiRequest(request({ ...markers, host: '128.0.0.1' }), [])).toBe(false)
+  })
+})
+
+describe('hasValidDesktopToken', () => {
+  it('is a no-op when no token is configured', () => {
+    expect(hasValidDesktopToken(request({}), undefined)).toBe(true)
+    expect(hasValidDesktopToken(request({}), '')).toBe(true)
+  })
+
+  it('accepts a matching header and rejects missing or wrong values', () => {
+    expect(hasValidDesktopToken(request({ 'x-dsh-token': 'abc' }), 'abc')).toBe(true)
+    expect(hasValidDesktopToken(request({}), 'abc')).toBe(false)
+    expect(hasValidDesktopToken(request({ 'x-dsh-token': 'ab' }), 'abc')).toBe(false)
+    expect(hasValidDesktopToken(request({ 'x-dsh-token': 'abd' }), 'abc')).toBe(false)
+  })
+
+  it('accepts the dsh-token cookie used by WebSocket upgrades', () => {
+    expect(hasValidDesktopToken(request({ cookie: 'other=1; dsh-token=abc; x=2' }), 'abc')).toBe(true)
+    expect(hasValidDesktopToken(request({ cookie: 'dsh-token=ab%3Cc' }), 'ab<c')).toBe(true)
+    expect(hasValidDesktopToken(request({ cookie: 'dsh-token=%E0%A4%A' }), 'x')).toBe(false)
+    expect(hasValidDesktopToken(request({ cookie: 'notoken' }), 'abc')).toBe(false)
   })
 })

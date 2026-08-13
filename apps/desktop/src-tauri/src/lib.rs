@@ -11,6 +11,7 @@ mod process;
 mod ready;
 mod sidecar;
 mod state;
+mod token;
 mod tray;
 
 use std::path::Path;
@@ -20,10 +21,11 @@ use std::time::Duration;
 
 use tauri::Manager;
 
-use crate::health::check_loader_ready;
+use crate::health::{check_host_described, check_loader_ready};
 use crate::paths::{default_dsh_home, default_workspace_cwd, resolve_node, resolve_web_bin};
 use crate::sidecar::{desktop_web_args, spawn_sidecar, wait_ready, SidecarProcess, SidecarSpec};
 use crate::state::{transition, BootEvent, BootPhase};
+use crate::token::generate_desktop_token;
 use crate::tray::install_tray;
 
 /// Shared runtime state held by the Tauri app.
@@ -112,9 +114,10 @@ fn boot_and_navigate(
     let home = default_dsh_home();
     let workspace = default_workspace_cwd(&home);
     std::fs::create_dir_all(home.join("logs")).map_err(|err| err.to_string())?;
+    let token = generate_desktop_token().map_err(|err| err.to_string())?;
     let spec = SidecarSpec {
         program: node,
-        args: desktop_web_args(&bin, &[]),
+        args: desktop_web_args(&bin, &["--desktop-token".into(), token.clone()]),
         cwd: workspace,
         env: vec![("DSH_HOME".into(), home.to_string_lossy().into_owned())],
         log_path: home.join("logs/sidecar.log"),
@@ -152,6 +155,16 @@ fn boot_and_navigate(
         return Err(err.to_string());
     }
     phase = transition(phase, BootEvent::LoaderReady);
+    if let Err(err) = check_host_described(port, &token) {
+        state.shutdown_sidecar();
+        let _ = transition(
+            phase,
+            BootEvent::Failed {
+                reason: err.to_string(),
+            },
+        );
+        return Err(err.to_string());
+    }
     navigate_to_sidecar(window, port)?;
     let _ = transition(phase, BootEvent::Visible);
     Ok(())
