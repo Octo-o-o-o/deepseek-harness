@@ -35,24 +35,11 @@ pub fn user_home_dir() -> PathBuf {
     home_dir()
 }
 
-#[cfg(target_os = "macos")]
+/// The dsh ecosystem home ($HOME/.dsh), shared with the npm/npx CLI so
+/// sessions, settings, and workspaces are live-shared between the desktop
+/// app and "npx @deepseek-ai/dsh". DSH_HOME env still overrides everything.
 fn platform_dsh_home() -> PathBuf {
-    home_dir().join("Library/Application Support/DeepSeekHarness")
-}
-
-#[cfg(target_os = "windows")]
-fn platform_dsh_home() -> PathBuf {
-    if let Ok(appdata) = env::var("APPDATA") {
-        if !appdata.is_empty() {
-            return PathBuf::from(appdata).join("DeepSeekHarness");
-        }
-    }
-    home_dir().join("AppData/Roaming/DeepSeekHarness")
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-fn platform_dsh_home() -> PathBuf {
-    home_dir().join(".local/share/DeepSeekHarness")
+    home_dir().join(".dsh")
 }
 
 /// Default sidecar cwd: last workspace from `desktop-state.json`, else `~/Documents`.

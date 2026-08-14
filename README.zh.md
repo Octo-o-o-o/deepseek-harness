@@ -31,6 +31,11 @@ npx @deepseek-ai/dsh web
 - 应用已签名并公证（Developer ID），双击即可打开；可用随附的 SHA256 校验完整性。
 - Windows 构建与完整桌面设计见 [`apps/desktop`](apps/desktop/README.md) 与 [`proposals/desktop-gui-ecosystem.md`](proposals/desktop-gui-ecosystem.md)。
 
+应用使用 `~/.dsh` 作为数据目录——与 npm CLI 版**同一个目录**,因此你之前在 `npx @deepseek-ai/dsh web` 里的会话、设置与工作区会**直接出现**,并且两个方向实时共享。
+
+- 与 npm 版同时运行:两个进程各自监听不同的本机端口、互不阻塞,但会**并发写同一份会话数据**,请避免同时运行两者;dshd 自身带有目录锁防止多开,CLI 暂不持锁。
+- 旧版 dshd(应用数据目录)会在首次启动时迁移到 `~/.dsh`——仅当 `~/.dsh` 里还没有你自己的会话数据时才会执行,绝不覆盖。
+
 ### 从源码运行
 
 如需从仓库源码运行：

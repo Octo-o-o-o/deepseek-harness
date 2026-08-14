@@ -31,6 +31,11 @@ A native desktop app for macOS (Apple Silicon) is available for users who prefer
 - The app is signed and notarized (Developer ID), so it opens with a normal double click; verify integrity with the published SHA256.
 - Windows builds and the full desktop design live in [`apps/desktop`](apps/desktop/README.md) and [`proposals/desktop-gui-ecosystem.md`](proposals/desktop-gui-ecosystem.md).
 
+The app uses `~/.dsh` as its data home — the same home as the npm CLI — so existing sessions, settings, and workspaces appear immediately and stay shared in both directions.
+
+- Running dshd while an `npx @deepseek-ai/dsh web` process is active: both listen on separate loopback ports and both remain functional, but they would write the same session store concurrently. Avoid running both at once; dshd holds a directory lock against other dshd instances, while the CLI does not lock.
+- Users of the earlier dshd build (app-data home) are migrated to `~/.dsh` on first launch, only when `~/.dsh` has no sessions of its own.
+
 ### Run from source
 
 To run from a repository checkout:

@@ -61,29 +61,55 @@ pub fn inject_fault_from_env() -> InjectFault {
     }
 }
 
-/// Legacy CLI home (`$HOME/.dsh`), overridable via `DSH_LEGACY_HOME`.
+/// Legacy home of pre-unification dshd builds (the macOS app-data dir),
+/// overridable via DSH_LEGACY_HOME. After the home was unified to $HOME/.dsh,
+/// this is only the source of a one-time copy for users of earlier builds.
 ///
 /// # Returns
-/// Absolute path of the pre-desktop Harness home.
+/// Absolute path of the previous desktop home.
 pub fn default_legacy_home() -> PathBuf {
     if let Ok(value) = std::env::var("DSH_LEGACY_HOME") {
         if !value.is_empty() {
             return PathBuf::from(value);
         }
     }
-    crate::paths::user_home_dir().join(".dsh")
+    #[cfg(target_os = "macos")]
+    {
+        crate::paths::user_home_dir().join("Library/Application Support/DeepSeekHarness")
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            if !appdata.is_empty() {
+                PathBuf::from(appdata).join("DeepSeekHarness")
+            } else {
+                crate::paths::user_home_dir().join("AppData/Roaming/DeepSeekHarness")
+            }
+        } else {
+            crate::paths::user_home_dir().join("AppData/Roaming/DeepSeekHarness")
+        }
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        crate::paths::user_home_dir().join(".local/share/DeepSeekHarness")
+    }
 }
 
 /// Whether the first-launch copy should run.
 ///
 /// # Parameters
-/// - `legacy`: `~/.dsh` (or test double).
-/// - `home`: desktop `DSH_HOME`.
+/// - legacy: the previous desktop home (or test double).
+/// - home: the unified dsh home ($HOME/.dsh).
 ///
 /// # Returns
-/// `true` when the legacy tree exists and the new home has no marker.
+/// true when the legacy tree exists, the home has no migration marker, and
+/// the home holds none of the product data directories yet. The last check
+/// keeps real npx data safe: a home with existing sessions/settings is
+/// authoritative and must never be overwritten by a stale desktop copy.
 pub fn should_migrate(legacy: &Path, home: &Path) -> bool {
-    legacy.is_dir() && !home.join("migration-state.json").is_file()
+    legacy.is_dir()
+        && !home.join("migration-state.json").is_file()
+        && !MIGRATE_DIRS.iter().any(|name| home.join(name).is_dir())
 }
 
 /// Copy selected legacy directories into the desktop home.
@@ -270,6 +296,22 @@ mod tests {
         assert!(home.join("migration-state.json").is_file());
         let again = migrate_legacy_home(&legacy, &home, InjectFault::None).unwrap();
         assert!(!again.migrated);
+        let _ = fs::remove_dir_all(legacy);
+        let _ = fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn skips_when_target_already_has_product_data() {
+        let legacy = temp_dir();
+        fs::create_dir_all(legacy.join("sessions")).unwrap();
+        fs::write(legacy.join("sessions/stale.jsonl"), "stale\n").unwrap();
+        let home = temp_dir();
+        fs::create_dir_all(home.join("sessions")).unwrap();
+        fs::write(home.join("sessions/real.jsonl"), "real\n").unwrap();
+        let report = migrate_legacy_home(&legacy, &home, InjectFault::None).unwrap();
+        assert!(!report.migrated);
+        assert_eq!(fs::read_to_string(home.join("sessions/real.jsonl")).unwrap(), "real\n");
+        assert!(!home.join("sessions/stale.jsonl").exists());
         let _ = fs::remove_dir_all(legacy);
         let _ = fs::remove_dir_all(home);
     }
