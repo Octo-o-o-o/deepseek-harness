@@ -186,6 +186,7 @@ async function deployApp() {
   await pruneNonHostArtifacts(appDir)
   await stripDevArtifacts(join(appDir, 'node_modules'))
   await stripDevArtifacts(appDir)
+  await scrubCheckoutPaths(join(appDir, 'node_modules'))
   await rm(consumer, { recursive: true, force: true })
 }
 
@@ -377,6 +378,7 @@ async function pruneNonHostArtifacts(dir) {
   await remove('node_modules/@anthropic-ai/claude-agent-sdk-darwin-x64')
   await remove('node_modules/@anthropic-ai/claude-agent-sdk-win32-x64')
   await remove('node_modules/@anthropic-ai/claude-agent-sdk-linux-x64')
+  await remove('node_modules/@img/sharp-wasm32')
   await remove('node_modules/node-pty/prebuilds/darwin-x64')
   await remove('node_modules/node-pty/prebuilds/win32-x64')
   await remove('node_modules/node-pty/prebuilds/linux-x64')
@@ -428,6 +430,44 @@ async function dirSize(dir) {
     else if (entry.isFile()) total += (await lstat(path)).size
   }
   return total
+}
+
+/**
+ * Neutralize build-machine checkout paths baked into client bundles.
+ * The tsdown CSS virtual-id embeds the absolute source path in every UI
+ * bundle; shipping that leaks the build machine username and layout for no
+ * runtime benefit. Replace the two checkout prefixes with a neutral literal.
+ */
+async function scrubCheckoutPaths(dir) {
+  const prefixes = [
+    '/Users/wangyixiao/WorkSpace/Reference/deepseek-harness/.grok-work/dsh-desktop/',
+    '/Users/wangyixiao/WorkSpace/Reference/deepseek-harness/',
+  ]
+  const neutral = 'deepseek-harness/'
+  let files = 0
+  const walk = async (current) => {
+    for (const entry of await readdir(current, { withFileTypes: true })) {
+      const path = join(current, entry.name)
+      if (entry.isDirectory()) {
+        await walk(path)
+        continue
+      }
+      if (!entry.isFile() || !entry.name.endsWith('.js')) continue
+      let text
+      try {
+        text = await readFile(path, 'utf8')
+      } catch {
+        continue
+      }
+      let next = text
+      for (const prefix of prefixes) next = next.split(prefix).join(neutral)
+      if (next === text) continue
+      await writeFile(path, next)
+      files += 1
+    }
+  }
+  await walk(dir)
+  if (files > 0) console.log('pack-sidecar: scrubbed checkout paths in ' + files + ' bundle(s)')
 }
 
 async function stripAbsoluteSymlinks(dir) {
