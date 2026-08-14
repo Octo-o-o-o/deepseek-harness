@@ -107,6 +107,12 @@ The following four were hit and fixed on a real Windows 11 x64 host on 2026-08-1
 
 Every one of these fixes is guarded by `process.platform === 'win32'`, and macOS was re-verified against them: `pack-sidecar.mjs check` passes, `scripts/release` unit tests pass 18/18, and both `tarball.ts` tar call sites read a real tarball. The Windows side was verified by a complete build that produced both NSIS and MSI.
 
+Two **runtime** (first launch after install) blockers were then hit and fixed on the same host:
+
+**First launch failed with "sidecar stdout closed before the ready line"; sidecar.log held `Assertion failed: ncrypto::CSPRNG(nullptr, 0)`.** The shell's `env.rs` whitelist omitted `SystemRoot`: after `env_clear()`, Node's crypto init fails and the process aborts before any JS runs. libuv-based parents silently re-inject `SystemRoot`, so only a Rust `Command` child exposes it. Fix: `SystemRoot` and `SystemDrive` joined `INHERITED_ENV`.
+
+**The sidecar then died with `EBUSY: watch ...\desktop.lock`.** The shell held the lock file with `share_mode(0)` (exclusive), while the sidecar's hot-reload watch of `<DSH_HOME>/cordis.patch.yml` gives chokidar the whole `.dsh` directory; the per-file `fs.watch` hits the exclusive handle and crashes Node. Fix: `lock.rs` now opens fully shared and holds a non-blocking exclusive `LockFileEx` byte-range lock — a second instance is still refused, innocent readers are not.
+
 ## E. Reporting a failure
 
 Three things localize almost any failure here:

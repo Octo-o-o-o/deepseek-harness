@@ -107,6 +107,12 @@ Windows 侧没有代码签名证书，安装时 SmartScreen 会拦一次，需�
 
 以上每处修复都由 `process.platform === 'win32'` 守卫，且 macOS 侧已对着它们复验：`pack-sidecar.mjs check` 通过、`scripts/release` 单测 18/18 通过、`tarball.ts` 两个 tar 调用点都读通了真实 tarball。Windows 侧则由一次产出 NSIS + MSI 的完整构建验证。
 
+另有两处**运行时**（安装后首启）拦路问题随后在同一真机实测修复：
+
+**首启报 "sidecar stdout closed before the ready line"，sidecar.log 为 `Assertion failed: ncrypto::CSPRNG(nullptr, 0)`。** 壳的 `env.rs` 白名单漏了 `SystemRoot`：`env_clear()` 后 Node 的加密初始化失败，进程在跑任何 JS 之前就 abort。libuv 系父进程会隐式补 `SystemRoot`，因此只有 Rust `Command` 拉起的子进程暴露此问题。修复：`INHERITED_ENV` 加入 `SystemRoot` 与 `SystemDrive`。
+
+**随后 sidecar 死于 `EBUSY: watch ...\desktop.lock`。** 壳用 `share_mode(0)` 完全排他持有锁文件，而 sidecar 对 `<DSH_HOME>/cordis.patch.yml` 的热重载 watch 会把 `.dsh` 整个目录交给 chokidar 扫描，per-file `fs.watch` 撞上排他句柄即崩。修复：`lock.rs` 改为全共享打开 + `LockFileEx` 非阻塞排他字节锁——第二个实例照样被拒（单实例语义不变），读取者不再被伤及。
+
 ## E. 失败了怎么报
 
 三样东西基本能定位这里的任何失败：

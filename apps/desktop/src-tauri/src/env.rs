@@ -8,7 +8,11 @@ use std::process::Command;
 /// official provider envs the sidecar already reads at boot. Other secrets stay
 /// out of the child: they belong to `$DSH_HOME` credentials, not the process
 /// environment. Locale, temp, home, PATH, and proxy vars are required for a
-/// normal Node boot.
+/// normal Node boot. `SystemRoot`/`SystemDrive` look Windows-only but are the
+/// pair Node's crypto init needs: without `SystemRoot` the sidecar aborts
+/// during `InitializeOncePerProcess` (`ncrypto::CSPRNG` assertion) before any
+/// JS runs. libuv-based parents mask this by re-injecting `SystemRoot`
+/// themselves; Rust's `Command` does not.
 pub const INHERITED_ENV: &[&str] = &[
     "HOME",
     "USERPROFILE",
@@ -19,6 +23,8 @@ pub const INHERITED_ENV: &[&str] = &[
     "TMPDIR",
     "TEMP",
     "TMP",
+    "SystemRoot",
+    "SystemDrive",
     "DEEPSEEK_API_KEY",
     "DEEPSEEK_BASE_URL",
     "DEEPSEEK_SEARCH_BASE_URL",
