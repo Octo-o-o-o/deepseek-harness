@@ -12,7 +12,11 @@ use std::process::Command;
 /// pair Node's crypto init needs: without `SystemRoot` the sidecar aborts
 /// during `InitializeOncePerProcess` (`ncrypto::CSPRNG` assertion) before any
 /// JS runs. libuv-based parents mask this by re-injecting `SystemRoot`
-/// themselves; Rust's `Command` does not.
+/// themselves; Rust's `Command` does not. The Windows layout and tooling vars
+/// (`APPDATA`, `COMSPEC`, `PATHEXT`, `ProgramFiles`, …) matter because the
+/// sidecar is a full agent server: every tool subprocess it spawns (bash,
+/// pwsh, git, npm) inherits exactly this environment. CA-bundle overrides and
+/// `SSH_AUTH_SOCK` keep TLS-intercepting proxies and ssh-based git working.
 pub const INHERITED_ENV: &[&str] = &[
     "HOME",
     "USERPROFILE",
@@ -23,8 +27,26 @@ pub const INHERITED_ENV: &[&str] = &[
     "TMPDIR",
     "TEMP",
     "TMP",
+    "TZ",
+    "TERM",
     "SystemRoot",
     "SystemDrive",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "PROGRAMDATA",
+    "PROGRAMFILES",
+    "ProgramFiles(x86)",
+    "ProgramW6432",
+    "PUBLIC",
+    "COMSPEC",
+    "PATHEXT",
+    "OS",
+    "USERNAME",
+    "USERDOMAIN",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "PROCESSOR_ARCHITECTURE",
+    "NUMBER_OF_PROCESSORS",
     "DEEPSEEK_API_KEY",
     "DEEPSEEK_BASE_URL",
     "DEEPSEEK_SEARCH_BASE_URL",
@@ -36,6 +58,11 @@ pub const INHERITED_ENV: &[&str] = &[
     "all_proxy",
     "NO_PROXY",
     "no_proxy",
+    "NODE_EXTRA_CA_CERTS",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "CURL_CA_BUNDLE",
+    "SSH_AUTH_SOCK",
 ];
 
 /// Build the sidecar environment: whitelist plus caller extras (`DSH_HOME`, …).
