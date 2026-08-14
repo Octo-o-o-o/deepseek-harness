@@ -44,6 +44,7 @@ function run(command, args, opts = {}) {
       cwd: opts.cwd ?? repoRoot,
       env: opts.env ?? process.env,
       stdio: 'inherit',
+      shell: needsShell(command),
     })
     child.on('error', reject)
     child.on('exit', (code) => {
@@ -65,6 +66,7 @@ function capture(command, args, opts = {}) {
       cwd: opts.cwd ?? repoRoot,
       env: opts.env ?? process.env,
       stdio: ['ignore', 'pipe', 'pipe'],
+      shell: needsShell(command),
     })
     let stdout = ''
     let stderr = ''
@@ -127,6 +129,22 @@ function nodeBin(name) {
 const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 
 /**
+ * Windows ships bsdtar in System32, but a PATH `tar` is often Git's GNU tar,
+ * which reads the `C:` drive prefix as a remote host and cannot read zip.
+ */
+const TAR = process.platform === 'win32' ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'tar'
+
+/**
+ * Windows batch shims (.cmd/.bat) are not standalone executables: Node's
+ * CVE-2024-27980 hardening rejects spawning them without a shell (EINVAL).
+ * @param {string} command
+ * @returns {boolean}
+ */
+function needsShell(command) {
+  return process.platform === 'win32' && /\.(cmd|bat)$/i.test(command)
+}
+
+/**
  * Assemble the payload from the repository's official release tarballs plus
  * an offline npm install. pnpm deploy keeps vendor packages as workspace
  * symlinks and an absolute-link .pnpm zoo, both of which break inside an app
@@ -147,7 +165,7 @@ async function deployApp() {
     for (const filename of await readdir(join(packRoot, family))) {
       if (!filename.endsWith('.tgz')) continue
       const tarball = join(packRoot, family, filename)
-      const manifest = JSON.parse((await capture('tar', ['-xOf', tarball, 'package/package.json'])).stdout)
+      const manifest = JSON.parse((await capture(TAR, ['-xOf', tarball, 'package/package.json'])).stdout)
       manifests.set(manifest.name, manifest)
       tarballBy.set(manifest.name, tarball)
     }
@@ -240,7 +258,7 @@ async function installNodeRuntime() {
     const extractRoot = join(tmpdir(), `dsh-node-${NODE_VERSION}-${process.pid}`)
     await rm(extractRoot, { recursive: true, force: true })
     await mkdir(extractRoot, { recursive: true })
-    await run('tar', ['-xf', archivePath, '-C', extractRoot])
+    await run(TAR, ['-xf', archivePath, '-C', extractRoot])
     const extracted = join(extractRoot, archive.replace(/\.zip$/, ''), 'node.exe')
     await cp(extracted, join(binDir, 'node.exe'))
     await rm(extractRoot, { recursive: true, force: true })
@@ -249,7 +267,7 @@ async function installNodeRuntime() {
   const extractRoot = join(tmpdir(), `dsh-node-${NODE_VERSION}-${process.pid}`)
   await rm(extractRoot, { recursive: true, force: true })
   await mkdir(extractRoot, { recursive: true })
-  await run('tar', ['-xzf', archivePath, '-C', extractRoot])
+  await run(TAR, ['-xzf', archivePath, '-C', extractRoot])
   const extracted = join(extractRoot, archive.replace(/\.tar\.gz$/, ''), 'bin', 'node')
   await cp(extracted, join(binDir, 'node'))
   await chmod(join(binDir, 'node'), 0o755)
@@ -282,6 +300,8 @@ async function selfCheck() {
       DSH_HOME: home,
       HOME: home,
       NODE_PATH: join(appDir, 'node_modules'),
+      SystemRoot: process.env.SystemRoot,
+      TEMP: process.env.TEMP,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })

@@ -13,6 +13,12 @@ import { capture } from './process.ts'
 /** Name of the file recording the order in which a packed family uploads. */
 export const PUBLISH_ORDER_FILE = 'publish-order.txt'
 
+/**
+ * Windows ships bsdtar in System32, but a PATH `tar` is often Git's GNU tar,
+ * which reads the `C:` drive prefix as a remote host and cannot read zip.
+ */
+const TAR = process.platform === 'win32' ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'tar'
+
 /** What a packed tarball calls itself. */
 export interface PackedIdentity {
   /** Package name from the packed manifest. */
@@ -27,7 +33,7 @@ export interface PackedIdentity {
  * @returns Every path inside the archive.
  */
 export function tarballFiles(tarball: string): string[] {
-  return capture('tar', ['-tzf', tarball]).split('\n').filter(line => line !== '')
+  return capture(TAR, ['-tzf', tarball]).split('\n').filter(line => line !== '')
 }
 
 /**
@@ -36,7 +42,7 @@ export function tarballFiles(tarball: string): string[] {
  * @returns The name and version the tarball declares.
  */
 export function packedIdentity(tarball: string): PackedIdentity {
-  const manifest: unknown = JSON.parse(capture('tar', ['-xOzf', tarball, 'package/package.json']))
+  const manifest: unknown = JSON.parse(capture(TAR, ['-xOzf', tarball, 'package/package.json']))
   if (manifest === null || typeof manifest !== 'object') throw new Error(`${tarball} has no manifest`)
   const { name, version } = manifest as Record<string, unknown>
   if (typeof name !== 'string' || typeof version !== 'string') throw new Error(`${tarball} manifest lacks name/version`)
