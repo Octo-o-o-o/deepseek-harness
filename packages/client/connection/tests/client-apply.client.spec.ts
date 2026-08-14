@@ -84,6 +84,17 @@ describe('connection client apply', () => {
     expect((await mount()).isLoopback).toBe(false)
   })
 
+  it('reports the desktop shell page fact through the connection handle', async () => {
+    ;(globalThis as Win).location = { hostname: 'localhost', search: '' }
+    expect((await mount()).isDesktopShell).toBe(false)
+    ;(globalThis as { __DSH_DESKTOP_BOOTSTRAP__?: string }).__DSH_DESKTOP_BOOTSTRAP__ = 'nonce'
+    try {
+      expect((await mount()).isDesktopShell).toBe(true)
+    } finally {
+      delete (globalThis as { __DSH_DESKTOP_BOOTSTRAP__?: string }).__DSH_DESKTOP_BOOTSTRAP__
+    }
+  })
+
   it('start() hands out one loop, rejects a second consumer, and stop() aborts the streams', async () => {
     ;(globalThis as Win).location = { hostname: 'localhost', search: '?fixture' }
     const handle = await mount()

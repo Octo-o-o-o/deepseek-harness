@@ -76,6 +76,12 @@ export type SidebarRootInjected = {
   startSession: (workspaceId?: WorkspaceId) => void
   /** Toggle the sidebar column through the layout service. */
   toggleSidebar: () => void
+  /**
+   * Whether the desktop shell serves this page. The brand row then names the
+   * installed application (app mark + product name) instead of the web
+   * wordmark; every other control is identical.
+   */
+  desktopShell: boolean
 }
 
 /**

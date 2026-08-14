@@ -124,6 +124,49 @@
   cursor: pointer;
 }
 
+/* Desktop shell brand: the application mark beside its product name, the
+   name wrapped across two lines so it fits the column without truncating at
+   the default width. The mark keeps the packaged icon's own colors (AppMark),
+   so only the name rides the theme ink. */
+.appBrand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.appMarkIcon {
+  flex: none;
+}
+
+.appName {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  text-align: left;
+}
+
+.appNameLine {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 18px;
+  color: var(--dsw-alias-label-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.appNameEdition {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 14px;
+  letter-spacing: 0.06em;
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .iconButton {
   flex: none;
   display: inline-flex;

@@ -2072,10 +2072,16 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the disposer removing the route.',
       },
       {
-        signature: 'registerFallback(handler: WebRoute[\'handler\']): () => void',
+        signature: 'registerFallback(handler: WebRoute[\'handler\'], owner: string = \'unknown\'): () => void',
         description: 'Claim the fallback seat: the handler answering every request no named route matches (the SPA dist server in the shipped Web composition). One owner only — a second registration throws, because two fallbacks cannot compose.',
-        parameters: [{ name: 'handler', description: 'owns the full response lifecycle of unmatched requests.' }],
+        parameters: [{ name: 'handler', description: 'owns the full response lifecycle of unmatched requests.' }, { name: 'owner', description: 'registration owner for composition audit.' }],
         returns: 'the disposer releasing the seat.',
+      },
+      {
+        signature: 'listRegistrations(): WebRegistration[]',
+        description: 'Snapshot of named HTTP, upgrade, and fallback registrations.',
+        parameters: [],
+        returns: 'a copy of each live registration\'s kind, path, and owner.',
       },
       {
         signature: 'tapIndex(transform: (html: string) => string): () => void',
@@ -4558,12 +4564,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface WebFetchResultView {\n    card: \'web\';\n    kind: \'fetch\';\n    title?: string;\n    url: string;\n    statusCode: number;\n    truncated: boolean;\n}',
   },
   {
+    name: 'WebRegistration',
+    declaration: 'export interface WebRegistration {\n    kind: WebRegistrationKind;\n    path: string;\n    owner: string;\n}',
+  },
+  {
+    name: 'WebRegistrationKind',
+    declaration: 'export type WebRegistrationKind = WebRouteKind | \'upgrade\' | \'fallback\';',
+  },
+  {
     name: 'WebResultView',
     declaration: 'export type WebResultView = WebSearchResultView | WebFetchResultView;',
   },
   {
     name: 'WebRoute',
-    declaration: 'export interface WebRoute {\n    kind: WebRouteKind;\n    path: string;\n    handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>;\n}',
+    declaration: 'export interface WebRoute {\n    kind: WebRouteKind;\n    path: string;\n    handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>;\n    owner?: string;\n}',
   },
   {
     name: 'WebRouteKind',
@@ -4595,7 +4609,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WebUpgradeRoute',
-    declaration: 'export interface WebUpgradeRoute {\n    path: string;\n    handler: (req: IncomingMessage, socket: Duplex, head: Buffer) => void | Promise<void>;\n}',
+    declaration: 'export interface WebUpgradeRoute {\n    path: string;\n    handler: (req: IncomingMessage, socket: Duplex, head: Buffer) => void | Promise<void>;\n    owner?: string;\n}',
   },
   {
     name: 'WorkflowAgentEndInfo',

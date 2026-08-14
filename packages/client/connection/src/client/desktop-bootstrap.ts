@@ -14,10 +14,23 @@ type DesktopRoot = {
  * @returns a promise that settles after bootstrap, or immediately otherwise.
  */
 export async function awaitDesktopBootstrap(): Promise<void> {
-  const pending = (globalThis as DesktopRoot).__DSH_DESKTOP_BOOTSTRAP_DONE__
-  if (pending !== undefined && typeof (pending as Promise<unknown>).then === 'function') {
+  const pending = (globalThis as DesktopRoot).__DSH_DESKTOP_BOOTSTRAP_DONE__ as Promise<unknown> | undefined
+  if (pending !== undefined && typeof pending.then === 'function') {
     await pending
   }
+}
+
+/**
+ * Whether the desktop shell served this page. The marker rides the index the
+ * shell's sidecar answers with, so it is readable before the first render —
+ * a surface that differs between the shell and a browser tab needs no wait
+ * for the connection handshake.
+ *
+ * @returns true inside the desktop shell.
+ */
+export function isDesktopShell(): boolean {
+  const mark = (globalThis as DesktopRoot).__DSH_DESKTOP_BOOTSTRAP__
+  return typeof mark === 'string' && mark !== ''
 }
 
 /**
@@ -26,8 +39,7 @@ export async function awaitDesktopBootstrap(): Promise<void> {
  * @returns a promise that settles after the ready POST, or immediately.
  */
 export async function signalDesktopReady(): Promise<void> {
-  const mark = (globalThis as DesktopRoot).__DSH_DESKTOP_BOOTSTRAP__
-  if (typeof mark !== 'string' || mark === '') return
+  if (!isDesktopShell()) return
   const response = await globalThis.fetch(new URL(READY_PATH, resolveBase()), {
     method: 'POST',
     credentials: 'same-origin',

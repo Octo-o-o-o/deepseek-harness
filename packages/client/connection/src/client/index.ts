@@ -6,6 +6,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { HostDescription, IApiClient } from './api.ts'
 import { ConnectionController, type ConnectionConfig, type ConnectionSinks, type ConnectionState } from './connection.ts'
+import { isDesktopShell } from './desktop-bootstrap.ts'
 import { FixtureApiClient } from './fixture.ts'
 import { WebApiClient } from './web-api-client.ts'
 import { createWebConnectionRpc } from './rpc.ts'
@@ -62,6 +63,8 @@ export interface ConnectionHandle {
   readonly api: IApiClient
   /** Whether the current page authority is loopback; non-browser contexts default to true. */
   readonly isLoopback: boolean
+  /** Whether the desktop shell served this page (its packaged sidecar, not a browser tab). */
+  readonly isDesktopShell: boolean
   /** Generation-scoped Host facts, including native path-open capability. */
   readonly hostDescription: HostDescriptionSource
   /** Generic logical RPC channels over the same Connection transport. */
@@ -104,6 +107,7 @@ export function apply(ctx: Context): void {
   const handle: ConnectionHandle = {
     api,
     isLoopback: pageLocation === undefined || isLoopbackHostname(pageLocation.hostname),
+    isDesktopShell: isDesktopShell(),
     hostDescription: {
       getSnapshot: () => description,
       subscribe: (listener) => {

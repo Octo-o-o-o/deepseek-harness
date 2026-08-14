@@ -1,5 +1,7 @@
 /**
- * Cordis-free React primitives styled only through `--dsw-*` tokens.
+ * Cordis-free React primitives styled only through `--dsw-*` tokens, except
+ * {@link AppMark}, which reproduces the installed application icon and keeps
+ * that icon's own colors.
  */
 
 export { StateDot } from './StateDot.tsx'
@@ -20,6 +22,7 @@ export { RiskConfirmation } from './RiskConfirmation.tsx'
 export type { RiskConfirmationProps } from './RiskConfirmation.tsx'
 export { ConnectionBanner } from './ConnectionBanner.tsx'
 export { FishLogo } from './FishLogo.tsx'
+export { AppMark } from './AppMark.tsx'
 export { BrandWordmark } from './BrandWordmark.tsx'
 export { Tooltip } from './Tooltip.tsx'
 export type { TooltipSide } from './Tooltip.tsx'

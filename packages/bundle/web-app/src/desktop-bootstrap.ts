@@ -87,6 +87,7 @@ export class DesktopBootstrap {
   }
 
   /**
+   * Report the browser client's handshake state for this launch.
    * @returns whether {@link DesktopBootstrap.markReady} has run.
    */
   isReady(): boolean {

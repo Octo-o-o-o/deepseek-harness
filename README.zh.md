@@ -29,7 +29,7 @@ npx @deepseek-ai/dsh web
 - 下载：[最新 GitHub Release](https://github.com/Octo-o-o-o/deepseek-harness/releases/latest)（`dshd-*.dmg`，已通过 Apple 公证）。
 - 安装：打开 DMG，把 `dshd` 拖进「应用程序」。
 - 应用已签名并公证（Developer ID），双击即可打开；可用随附的 SHA256 校验完整性。
-- Windows 构建与完整桌面设计见 [`apps/desktop`](apps/desktop/README.md) 与 [`proposals/desktop-gui-ecosystem.md`](proposals/desktop-gui-ecosystem.md)。
+- Windows 构建与完整桌面设计见 [`apps/desktop`](apps/desktop/README.md)。
 
 应用使用 `~/.dsh` 作为数据目录——与 npm CLI 版**同一个目录**,因此你之前在 `npx @deepseek-ai/dsh web` 里的会话、设置与工作区会**直接出现**,并且两个方向实时共享。
 

@@ -21,6 +21,8 @@ interface WebRoute {
   path: string
   /** Owns the full response lifecycle (may hold the response open, e.g. SSE). */
   handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>
+  /** Registration owner for desktop `/api` audit. */
+  owner?: string
 }
 ```
 
@@ -83,9 +85,17 @@ registerUpgrade(route: WebUpgradeRoute): () => void
  * owner only — a second registration throws, because two fallbacks cannot
  * compose.
  * @param handler - owns the full response lifecycle of unmatched requests.
+ * @param owner - registration owner for composition audit.
  * @returns the disposer releasing the seat.
  */
-registerFallback(handler: WebRoute['handler']): () => void
+registerFallback(handler: WebRoute['handler'], owner: string = 'unknown'): () => void
+
+/**
+ * Snapshot of named HTTP, upgrade, and fallback registrations.
+ *
+ * @returns a copy of each live registration's kind, path, and owner.
+ */
+listRegistrations(): WebRegistration[]
 
 /**
  * Register an index.html transform, applied by the fallback owner to every
@@ -104,5 +114,5 @@ tapIndex(transform: (html: string) => string): () => void
 applyIndexTaps(html: string): string
 ```
 
-Source: [`packages/host/webserver/src/index.ts:59`](../../packages/host/webserver/src/index.ts)
+Source: [`packages/host/webserver/src/index.ts:75`](../../packages/host/webserver/src/index.ts)
 <!-- END GENERATED cordis-surface -->

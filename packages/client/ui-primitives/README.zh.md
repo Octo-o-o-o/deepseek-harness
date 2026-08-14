@@ -36,6 +36,10 @@
 
 `WebBlock` 渲染一次已完成的 web 检索，用一个组件绘制 `web` 渲染意图的两种 kind（由 `kind` 判别）。`search` 在有序引用列表上方显示可选的提供方回答（通过 `MarkdownText`）：每个 source 是一个安全外链，以其标题为标签，或以其主机名为标签，当 URL 无法解析或没有主机名（`file:`/`data:` URL）时回退到原始 URL，因此标签绝不为空；其下渲染 snippet 与发布日期。只有 http(s) URL 会成为锚点（设置 `target`/`rel`）——这是 `MarkdownText` 对不受信任链接所用 allowlist 的 http(s) 子集（该 allowlist 还允许 `mailto:`，此处排除）；任何其他 URL 渲染为纯文本。整份列表渲染在一个定高滚动容器里（`max-height: 320px`、`overflow-y: auto`），因此超出该高度的列表在原地纵向滚动，而不是把卡片撑高；`<li value>` 固定每个 source 的引用编号，从 1 起连续，而不依赖 `<ol>` 的隐式计数。当一次 search 合法地返回无 answer 且无 source 时，卡片显示一个明确的空状态提示，而不是空的 `<ol>`（chat 行不呈现原始 result content）。`fetch` 显示一个紧凑摘要：带链接的最终 URL 及其 HTTP 状态。两者都会标记一次被截断的检索。原理：[Web result 卡片笔记](../../../.agents/notes/implemented/feature/2026-07-30-web-result-card-frontend.md)与[来源滚动笔记](../../../.agents/notes/implemented/feature/2026-08-03-web-search-source-scroll.md)。
 
+## 品牌标识
+
+`FishLogo` 与 `BrandWordmark` 是产品的 Web 标识：其墨色为 `currentColor`，因此在两种主题下都取用周围的文字颜色。`AppMark` 复刻打包后的桌面应用图标——白色鲸鱼镂空在图标的深色底板上，并以一道细边框让底板边缘在深色表面上仍然可辨——它是本包里唯一使用字面颜色而非 `--dsw-*` 令牌的组件，因为它必须始终能被认出就是用户从 Dock 或任务栏启动的那个图标。鲸鱼几何数据只有一处来源 `src/whale-path.ts`，由扁平 logo 与该标识共用。
+
 ## 模型体验
 
 无。该包在浏览器中渲染纯 React 原子组件；这里没有任何内容进入模型请求。

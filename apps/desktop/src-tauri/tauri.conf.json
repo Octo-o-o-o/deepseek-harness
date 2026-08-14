@@ -10,7 +10,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "dshd",
+        "title": "DeepSeek Harness Desktop",
         "width": 1280,
         "height": 840,
         "minWidth": 800,

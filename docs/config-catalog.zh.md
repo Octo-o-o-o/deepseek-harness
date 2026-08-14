@@ -409,10 +409,16 @@ export interface ConnectionConfig {
   trustedHosts?: string[]
   /** Maximum buffered JSON body for every `/api` request. */
   maxRequestBodyBytes?: number
+  /**
+   * Per-launch desktop token. Empty/absent leaves `/api` unauthenticated, the
+   * historical CLI default. A non-empty value requires `X-DSH-Token` (or the
+   * `dsh-token` cookie on WebSocket upgrades).
+   */
+  desktopToken?: string
 }
 ```
 
-来源：[`packages/client/connection/src/index.ts:50`](../packages/client/connection/src/index.ts)
+来源：[`packages/client/connection/src/index.ts:51`](../packages/client/connection/src/index.ts)
 
 <a id="deepseek-aidsh-client-hmr"></a>
 
@@ -801,7 +807,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/host/webserver/src/index.ts:45`](../packages/host/webserver/src/index.ts)
+来源：[`packages/host/webserver/src/index.ts:61`](../packages/host/webserver/src/index.ts)
 
 <a id="deepseek-aidsh-invariants"></a>
 

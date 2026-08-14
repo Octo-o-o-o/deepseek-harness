@@ -29,7 +29,7 @@ A native desktop app for macOS (Apple Silicon) is available for users who prefer
 - Download: [latest GitHub Release](https://github.com/Octo-o-o-o/deepseek-harness/releases/latest) (`dshd-*.dmg`, notarized with Apple).
 - Install: open the DMG and drag `dshd` into Applications.
 - The app is signed and notarized (Developer ID), so it opens with a normal double click; verify integrity with the published SHA256.
-- Windows builds and the full desktop design live in [`apps/desktop`](apps/desktop/README.md) and [`proposals/desktop-gui-ecosystem.md`](proposals/desktop-gui-ecosystem.md).
+- Windows builds and the full desktop design live in [`apps/desktop`](apps/desktop/README.md).
 
 The app uses `~/.dsh` as its data home — the same home as the npm CLI — so existing sessions, settings, and workspaces appear immediately and stay shared in both directions.
 
