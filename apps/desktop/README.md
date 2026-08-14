@@ -50,6 +50,25 @@ pnpm --filter @deepseek-ai/dshd run pack
 pnpm --filter @deepseek-ai/dshd run build
 ```
 
+### Signed and notarized macOS DMG
+
+```sh
+xcrun notarytool store-credentials "dsh-notary" --apple-id "<Apple ID>" --team-id "<Team ID>"
+APPLE_KEYCHAIN_PROFILE=dsh-notary pnpm run release:desktop-mac
+```
+
+`scripts/release/desktop-mac.ts` runs the whole release: repository build, sidecar pack, `tauri build`, sidecar embed, signing, DMG, notarization, and stapling. Signing follows the embed step because a signature taken before it does not cover the Node runtime or the deployed CLI. It covers every Mach-O file in the finished bundle, selected by file header rather than by the executable bit so native addons shipped without `+x` are included, and takes the innermost path first so the bundle seal is last. `src-tauri/entitlements.node.plist` grants JIT, unsigned executable memory, and the library-validation exemption to the embedded Node runtime alone; the application binary and the sidecar's helper tools are signed under the hardened runtime with no entitlements. The bundle also carries `LICENSE` and the generated `THIRD_PARTY_NOTICES.md`, and the release refuses to sign without them.
+
+The preflight runs before the build, so a credential problem costs seconds rather than a full pack. It refuses a non-macOS host, a Keychain holding no `Developer ID Application` identity, an identity choice it would otherwise have to guess (set `DSH_SIGN_IDENTITY`), and missing or partial notarization credentials. Credentials come from `APPLE_KEYCHAIN_PROFILE`, the `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID` group, or the `APPLE_API_KEY` / `APPLE_API_KEY_ID` / `APPLE_API_ISSUER` group; a partial group is an error rather than a fallback. Release variables are withheld from the build and pack subprocesses and reach only `codesign` and `notarytool`.
+
+Verify a finished DMG. The notarization ticket is stapled to the DMG, so `stapler validate` takes the disk image; the mounted application is checked by Gatekeeper, whose `source=Notarized Developer ID` is what a double-click resolves:
+
+```sh
+xcrun stapler validate apps/desktop/dist/dshd-0.1.0-arm64.dmg
+codesign --verify --deep --strict --verbose=2 "/Volumes/dshd/dshd.app"
+spctl --assess --type execute --verbose=4 "/Volumes/dshd/dshd.app"
+```
+
 `scripts/pack-sidecar.mjs` steps: `deploy`, `runtime`, `check`, `embed` (after `tauri build`). Self-check requires a ready line within 15s, `GET /` 200 with `__DSH_BOOT__`, and SIGTERM exit 0, with `PATH=/usr/bin:/bin:/usr/sbin:/sbin`.
 
 These probes use `fetch` and `curl`, which decode `Transfer-Encoding: chunked` — the framing the sidecar always sends — while the shell's own health client decodes it in `http.rs`. `cargo test`, not the pack self-check, is what holds that client to real framing.
@@ -81,5 +100,5 @@ The shell always generates a per-launch hex token and a bootstrap nonce and inje
 - Windows process-tree kill (Job Object) and `share_mode(0)` lock are compiled but **not locally verified**. `rustup target add x86_64-pc-windows-msvc` failed in this environment (rustup cache). CI owns the Windows run.
 - Windows sandbox remains partial, same as the CLI.
 - WebView2 presence detection / installer prompt is not wired.
-- The `.app` is unsigned; notarize is out of scope.
+- Only macOS has a signed release path. The `build` script and both CI platform artifacts stay unsigned, and Windows and Linux installer formats and their signing remain release work.
 - `open` of the `.app` from a sandbox may fail (`LSOpen` -54); launching `Contents/MacOS/dshd` still starts the sidecar.

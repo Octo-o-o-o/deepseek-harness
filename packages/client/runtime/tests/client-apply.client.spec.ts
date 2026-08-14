@@ -31,6 +31,7 @@ async function mount(): Promise<Bench> {
   const handle: ConnectionHandle = {
     api,
     isLoopback: true,
+    isDesktopShell: false,
     hostDescription: {
       getSnapshot: () => undefined,
       subscribe: () => () => {},

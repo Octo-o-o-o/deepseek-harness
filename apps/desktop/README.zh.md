@@ -50,6 +50,25 @@ pnpm --filter @deepseek-ai/dshd run pack
 pnpm --filter @deepseek-ai/dshd run build
 ```
 
+### 已签名并公证的 macOS DMG
+
+```sh
+xcrun notarytool store-credentials "dsh-notary" --apple-id "<Apple ID>" --team-id "<Team ID>"
+APPLE_KEYCHAIN_PROFILE=dsh-notary pnpm run release:desktop-mac
+```
+
+`scripts/release/desktop-mac.ts` 完成整条发布：仓库构建、sidecar 打包、`tauri build`、sidecar 嵌入、签名、DMG、公证、staple。签名在嵌入之后进行，因为在此之前取得的签名覆盖不到 Node 运行时与已 deploy 的 CLI。签名覆盖成品 bundle 内的每个 Mach-O 文件——按文件头而非可执行位挑选，因此不带 `+x` 的原生插件也在内——并从最深路径开始，使 bundle 封条最后取得。`src-tauri/entitlements.node.plist` 只把 JIT、未签名可执行内存与库校验豁免授予内嵌的 Node 运行时；应用二进制与 sidecar 的辅助工具在 hardened runtime 下签名且不带 entitlements。bundle 另外携带 `LICENSE` 与生成的 `THIRD_PARTY_NOTICES.md`，缺失则拒绝签名。
+
+预检在构建之前运行，凭据出问题只花几秒而不是一整轮打包。它拒绝非 macOS 主机、Keychain 中没有 `Developer ID Application` 身份、需要它猜测的身份选择（改用 `DSH_SIGN_IDENTITY` 指定），以及缺失或不完整的公证凭据。凭据来自 `APPLE_KEYCHAIN_PROFILE`、`APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID` 一组，或 `APPLE_API_KEY` / `APPLE_API_KEY_ID` / `APPLE_API_ISSUER` 一组；不完整的一组是错误而非回落。发布变量不会传给构建与打包子进程，只到达 `codesign` 与 `notarytool`。
+
+复验成品 DMG。公证票据 staple 在 DMG 上，因此 `stapler validate` 取的是磁盘映像；挂载后的应用由 Gatekeeper 检查，其 `source=Notarized Developer ID` 才是双击时真正解析到的结果：
+
+```sh
+xcrun stapler validate apps/desktop/dist/dshd-0.1.0-arm64.dmg
+codesign --verify --deep --strict --verbose=2 "/Volumes/dshd/dshd.app"
+spctl --assess --type execute --verbose=4 "/Volumes/dshd/dshd.app"
+```
+
 `scripts/pack-sidecar.mjs` 的步骤：`deploy`、`runtime`、`check`、`embed`（在 `tauri build` 之后）。自检要求 15 秒内出现就绪行、`GET /` 返回 200 且含 `__DSH_BOOT__`、SIGTERM 退出码 0，且 `PATH=/usr/bin:/bin:/usr/sbin:/sbin`。
 
 这些探测使用 `fetch` 与 `curl`，二者会解码 `Transfer-Encoding: chunked`——sidecar 始终发送的框架——而壳自己的健康检查客户端在 `http.rs` 中解码它。把该客户端约束到真实框架的是 `cargo test`，不是打包自检。
@@ -81,5 +100,5 @@ pnpm --filter @deepseek-ai/dshd run build
 - Windows 的进程树终止（Job Object）与 `share_mode(0)` 锁已编译但**未在本机验证**。本环境的 `rustup target add x86_64-pc-windows-msvc` 失败（rustup 缓存）。Windows 运行由 CI 负责。
 - Windows 沙箱仍不完整，与 CLI 相同。
 - 未接入 WebView2 存在性检测 / 安装器提示。
-- `.app` 未签名；公证不在范围内。
+- 只有 macOS 有签名发布路径。`build` 脚本与 CI 两个平台的产物仍未签名，Windows 与 Linux 的安装包格式及其签名仍属待办发布工作。
 - 从沙箱内 `open` 该 `.app` 可能失败（`LSOpen` -54）；直接启动 `Contents/MacOS/dshd` 仍能拉起 sidecar。

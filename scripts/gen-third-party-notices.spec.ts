@@ -3,8 +3,13 @@ import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import {
+  assertRustInventoryCurrent,
   CLAUDE_AGENT_SDK_PACKAGE,
   claudeDistributionFromManifest,
+  copyleftRustCrates,
+  nonPermissiveRustCrates,
+  renderRustTable,
+  type RustCrate,
   collectPythonDependencies,
   isOwnerAuthorizedRuntime,
   isPermissive,
@@ -341,5 +346,67 @@ describe('manifestPatterns', () => {
       'native/landlock-run/packages/*/package.json',
       'examples/*/package.json',
     ])
+  })
+})
+
+describe('desktop Rust inventory', () => {
+  const lock = (...pairs: ReadonlyArray<readonly [string, string]>): string =>
+    pairs.map(([name, version]) => `[[package]]\nname = "${name}"\nversion = "${version}"\n`).join('\n')
+  const crate = (name: string, version: string, license: string | null = 'MIT'): RustCrate =>
+    ({ name, version, license, repository: null })
+
+  it('accepts an inventory that matches the lock once workspace members are excluded', () => {
+    expect(() => {
+      assertRustInventoryCurrent(
+        [crate('serde', '1.0.0')],
+        lock(['dshd', '0.1.0'], ['serde', '1.0.0']),
+        new Set(['dshd']),
+      )
+    }).not.toThrow()
+  })
+
+  it('names a crate the lock added', () => {
+    expect(() => {
+      assertRustInventoryCurrent([], lock(['serde', '1.0.0']), new Set())
+    }).toThrow(/missing serde@1\.0\.0/)
+  })
+
+  it('names a crate the lock no longer resolves', () => {
+    expect(() => {
+      assertRustInventoryCurrent([crate('serde', '1.0.0')], lock(), new Set())
+    }).toThrow(/stale serde@1\.0\.0/)
+  })
+
+  it('treats a version bump as both an addition and a removal', () => {
+    const error = (): void => {
+      assertRustInventoryCurrent([crate('serde', '1.0.0')], lock(['serde', '1.0.1']), new Set())
+    }
+    expect(error).toThrow(/missing serde@1\.0\.1/)
+    expect(error).toThrow(/stale serde@1\.0\.0/)
+  })
+
+  it('reports crates whose terms neither the permissive policy nor an authorization clears', () => {
+    const inventory = [
+      crate('serde', '1.0.0', 'MIT OR Apache-2.0'),
+      // Unicode-3.0 and the LLVM exception are permissive; MPL-2.0 is cleared
+      // by name; an undeclared license and unreviewed copyleft are not.
+      crate('litemap', '0.8.2', 'Unicode-3.0'),
+      crate('target-lexicon', '0.12.16', 'Apache-2.0 WITH LLVM-exception'),
+      crate('selectors', '0.36.1', 'MPL-2.0'),
+      crate('unreviewed-copyleft', '1.0.0', 'GPL-3.0-only'),
+      crate('mystery', '0.1.0', null),
+    ]
+    expect(nonPermissiveRustCrates(inventory).map(found => found.name))
+      .toEqual(['unreviewed-copyleft', 'mystery'])
+  })
+
+  it('lists the weak-copyleft crates whose source must be offered', () => {
+    const inventory = [crate('serde', '1.0.0'), crate('selectors', '0.36.1', 'MPL-2.0')]
+    expect(copyleftRustCrates(inventory).map(found => found.name)).toEqual(['selectors'])
+  })
+
+  it('links an undeclared repository to crates.io and marks an absent license', () => {
+    expect(renderRustTable([crate('serde', '1.0.0', null)]))
+      .toContain('| [`serde`](https://crates.io/crates/serde) | 1.0.0 | not declared |')
   })
 })

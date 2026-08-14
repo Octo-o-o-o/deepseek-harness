@@ -10,7 +10,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "dshd",
+        "title": "DeepSeek Harness Desktop",
         "width": 1280,
         "height": 840,
         "minWidth": 800,
@@ -35,7 +35,9 @@
     ],
     "resources": {
       "../sidecar/dist/bin": "bin",
-      "../sidecar/dist/app": "app"
+      "../sidecar/dist/app": "app",
+      "../../../LICENSE": "LICENSE",
+      "../../../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
     }
   }
 }

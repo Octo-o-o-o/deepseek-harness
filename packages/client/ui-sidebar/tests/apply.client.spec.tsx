@@ -6,7 +6,7 @@ import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type { SidebarRootInjected } from '@deepseek-ai/dsh-client-ui-sidebar/client'
 
-async function bench(declare = true) {
+async function bench(declare = true, { desktopShell = false } = {}) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
   const layout = { toggleSidebar: vi.fn() }
@@ -15,6 +15,7 @@ async function bench(declare = true) {
   ctx.provide('layout', layout)
   ctx.provide('sessions', sessions as never)
   ctx.provide('workspaces', workspaces as never)
+  ctx.provide('connection', { isDesktopShell: desktopShell } as never)
   ctx.provide('locale', new LocaleRuntime(ctx))
   const slots = ctx.get('slots') as SlotRegistry
   if (declare) {
@@ -28,7 +29,7 @@ async function bench(declare = true) {
 
 describe('ui-sidebar apply', () => {
   it('declares only the services it uses', () => {
-    expect(inject).toEqual(['slots', 'layout', 'sessions', 'workspaces', 'locale'])
+    expect(inject).toEqual(['slots', 'layout', 'sessions', 'workspaces', 'locale', 'connection'])
   })
 
   it('registers the shell and declares its child seats', async () => {
@@ -41,7 +42,9 @@ describe('ui-sidebar apply', () => {
     // Copy rides the standard locale seat, not the inject face.
     expect(b.slots.entries('sidebar')[0]!.locale).toBe('sidebar')
     const injected = (b.slots.entries('sidebar')[0]!.inject as () => SidebarRootInjected)()
-    expect(Object.keys(injected)).toEqual(['startSession', 'toggleSidebar'])
+    expect(Object.keys(injected)).toEqual(['startSession', 'toggleSidebar', 'desktopShell'])
+    // The page fact rides the connection service, not a re-read of the marker.
+    expect(injected.desktopShell).toBe(false)
     // Both arms delegate to the runtime's shared New Session action.
     injected.startSession('workspace' as never)
     expect(b.workspaces.startSession).toHaveBeenCalledWith('workspace')
@@ -49,6 +52,13 @@ describe('ui-sidebar apply', () => {
     expect(b.workspaces.startSession).toHaveBeenLastCalledWith(undefined)
     injected.toggleSidebar()
     expect(b.layout.toggleSidebar).toHaveBeenCalledOnce()
+  })
+
+  it('passes the desktop-shell page fact to the shell', async () => {
+    const b = await bench(true, { desktopShell: true })
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const injected = (b.slots.entries('sidebar')[0]!.inject as () => SidebarRootInjected)()
+    expect(injected.desktopShell).toBe(true)
   })
 
   it('fails when no live owner declared the sidebar slot', async () => {

@@ -148,7 +148,7 @@ export class WebServer extends Service {
    * @param owner - registration owner for composition audit.
    * @returns the disposer releasing the seat.
    */
-  registerFallback(handler: WebRoute['handler'], owner = 'unknown'): () => void {
+  registerFallback(handler: WebRoute['handler'], owner: string = 'unknown'): () => void {
     if (this.fallback !== undefined) {
       throw new Error('webserver: fallback already registered')
     }

@@ -26,9 +26,10 @@ afterEach(cleanup)
  * what an untouched client shows; `locale: 'en'` pins the en copy instead.
  * The installed face backs the entry's standard `t` seat either way.
  */
-async function bench(options: { locale?: 'en' } = {}) {
+async function bench(options: { locale?: 'en'; desktopShell?: boolean } = {}) {
   const runtime = await SlotTestRuntime.create()
   runtime.provide('layout', { toggleSidebar: vi.fn() })
+  runtime.provide('connection', { isDesktopShell: options.desktopShell ?? false })
   const locale = new LocaleRuntime(runtime.ctx)
   if (options.locale === 'en') locale.setLocale('en')
   runtime.provide('locale', locale)
@@ -70,6 +71,16 @@ describe('sidebar shell snapshots', () => {
     expect(slot.container).toMatchSnapshot()
     // Same tree position: the owner flip re-rendered the shell in place.
     expect(slot.container.firstElementChild).toBe(shell)
+    await runtime.dispose()
+  })
+
+  it('renders the desktop shell brand row (app mark + two-line product name)', async () => {
+    const { runtime } = await bench({ locale: 'en', desktopShell: true })
+    const slot = runtime.renderSlot('sidebar', { collapsed: false, width: 300 })
+    expect(slot.view.getAllByRole('button', { name: 'New session' })).toHaveLength(2)
+    expect(slot.view.getByText('DeepSeek Harness')).toBeTruthy()
+    expect(slot.view.getByText('Desktop')).toBeTruthy()
+    expect(slot.container).toMatchSnapshot()
     await runtime.dispose()
   })
 

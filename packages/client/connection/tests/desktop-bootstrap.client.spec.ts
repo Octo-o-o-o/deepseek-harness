@@ -1,7 +1,7 @@
 /** Desktop bootstrap helpers: wait for the page POST, then signal ready. */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { awaitDesktopBootstrap, signalDesktopReady } from '../src/client/desktop-bootstrap.ts'
+import { awaitDesktopBootstrap, isDesktopShell, signalDesktopReady } from '../src/client/desktop-bootstrap.ts'
 
 type DesktopRoot = {
   __DSH_DESKTOP_BOOTSTRAP__?: unknown
@@ -23,6 +23,16 @@ describe('awaitDesktopBootstrap', () => {
     })
     await awaitDesktopBootstrap()
     expect(settled).toBe(true)
+  })
+})
+
+describe('isDesktopShell', () => {
+  it('reads the marker the shell writes into the index', () => {
+    expect(isDesktopShell()).toBe(false)
+    ;(globalThis as DesktopRoot).__DSH_DESKTOP_BOOTSTRAP__ = ''
+    expect(isDesktopShell()).toBe(false)
+    ;(globalThis as DesktopRoot).__DSH_DESKTOP_BOOTSTRAP__ = 'nonce'
+    expect(isDesktopShell()).toBe(true)
   })
 })
 

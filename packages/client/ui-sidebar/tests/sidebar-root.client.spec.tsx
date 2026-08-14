@@ -21,7 +21,10 @@ afterEach(() => {
 // props share; stub them as never-called functions.
 const neverHook = (() => { throw new Error('shell must not read global hooks') }) as never
 
-function mountShell({ collapsed = false, width = 300 }: { collapsed?: boolean; width?: number } = {}) {
+function mountShell(
+  { collapsed = false, width = 300, desktopShell = false }:
+  { collapsed?: boolean; width?: number; desktopShell?: boolean } = {},
+) {
   const startSession = vi.fn()
   const toggleSidebar = vi.fn()
   let regionOwner: SidebarSectionOwnerProps | undefined
@@ -32,7 +35,7 @@ function mountShell({ collapsed = false, width = 300 }: { collapsed?: boolean; w
     <SidebarRoot
       collapsed={current.collapsed} width={current.width}
       useSessions={neverHook} useWorkspaces={neverHook}
-      startSession={startSession} toggleSidebar={toggleSidebar} t={t}
+      startSession={startSession} toggleSidebar={toggleSidebar} desktopShell={desktopShell} t={t}
       renderSlot={((
         key: string,
         owner: SidebarFooterActionOwnerProps | SidebarSectionOwnerProps | SidebarSettingsOwnerProps,
@@ -115,5 +118,25 @@ describe('SidebarRoot shell', () => {
     const b = mountShell({ collapsed: true })
     expect(b.regionOwner().wide).toBe(false)
     expect(screen.getByRole('button', { name: 'Open sidebar' })).toBeTruthy()
+  })
+
+  it('names the installed application in the desktop shell, keeping the New Session route', () => {
+    const b = mountShell({ desktopShell: true })
+    const starters = screen.getAllByRole('button', { name: 'New session' })
+    expect(starters).toHaveLength(2)
+    const brand = starters[0]!
+    expect(brand.textContent).toBe('DeepSeek HarnessDesktop')
+    // The application mark replaces the web wordmark, so the row carries the
+    // packaged icon's plate rather than the wordmark's currentColor letterforms.
+    expect(brand.innerHTML).toContain('#0B0B0C')
+    fireEvent.click(brand)
+    expect(b.startSession).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the web wordmark outside the desktop shell', () => {
+    mountShell()
+    const brand = screen.getAllByRole('button', { name: 'New session' })[0]!
+    expect(brand.textContent).toBe('')
+    expect(brand.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 182 24')
   })
 })

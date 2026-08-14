@@ -282,7 +282,7 @@ describe('healProfilesModuleFallback', () => {
     const fallback = join(home, 'profiles', 'node_modules')
     expect(lstatSync(join(fallback, 'bundle-a')).isSymbolicLink()).toBe(true)
     expect(lstatSync(join(fallback, 'dep-of-a')).isSymbolicLink()).toBe(true)
-    expect(readlinkSync(join(fallback, 'dep-of-a'))).toContain(`${join('node_modules', '.pnpm')}`)
+    expect(readlinkSync(join(fallback, 'dep-of-a'))).toContain(join('node_modules', '.pnpm'))
     rmSync(root, { recursive: true, force: true })
     rmSync(home, { recursive: true, force: true })
   })

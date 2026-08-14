@@ -54,6 +54,32 @@ describe('ic_ds_ icon set', () => {
   })
 })
 
+describe('AppMark', () => {
+  it('draws the packaged icon: dark plate, hairline ring, centered white whale', () => {
+    const { container } = render(<primitives.AppMark />)
+    const svg = container.querySelector('svg')!
+    expect(svg.getAttribute('width')).toBe('32')
+    expect(svg.getAttribute('height')).toBe('32')
+    expect(svg.getAttribute('viewBox')).toBe('0 0 32 32')
+    const [plate, ring] = [...container.querySelectorAll('rect')]
+    expect(plate!.getAttribute('fill')).toBe('#0B0B0C')
+    expect(plate!.getAttribute('rx')).toBe('7.16')
+    expect(ring!.getAttribute('stroke-opacity')).toBe('0.14')
+    // The whale sits centered on the plate at the packaged icon's proportion.
+    expect(container.querySelector('g')!.getAttribute('transform'))
+      .toBe('translate(6 8.64) scale(0.86356)')
+    expect(container.querySelector('path')!.getAttribute('fill')).toBe('#FFFFFF')
+  })
+
+  it('scales as one square from the size prop', () => {
+    const { container } = render(<primitives.AppMark size={26} className="x" />)
+    const svg = container.querySelector('svg')!
+    expect(svg.getAttribute('width')).toBe('26')
+    expect(svg.getAttribute('height')).toBe('26')
+    expect(svg.classList.contains('x')).toBe(true)
+  })
+})
+
 describe('FishLogo', () => {
   it('renders the fish path in currentColor at the native ratio', () => {
     const { container } = render(<primitives.FishLogo />)
