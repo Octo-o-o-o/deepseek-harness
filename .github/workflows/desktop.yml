@@ -6,12 +6,28 @@ on:
       - 'apps/desktop/**'
       - 'apps/cli/package.json'
       - 'packages/boot/app-boot/**'
+      # The payload the shell starts and the surfaces it depends on: the
+      # desktop bootstrap endpoints, the Web UI the WebView loads, and the
+      # process and shell seams the agent runs its tools through.
+      - 'packages/bundle/web-app/**'
+      - 'packages/client/**'
+      - 'packages/shell/**'
+      - 'packages/subprocess/**'
+      - 'scripts/release/desktop-mac.ts'
       - '.github/workflows/desktop.yml'
   pull_request:
     paths:
       - 'apps/desktop/**'
       - 'apps/cli/package.json'
       - 'packages/boot/app-boot/**'
+      # The payload the shell starts and the surfaces it depends on: the
+      # desktop bootstrap endpoints, the Web UI the WebView loads, and the
+      # process and shell seams the agent runs its tools through.
+      - 'packages/bundle/web-app/**'
+      - 'packages/client/**'
+      - 'packages/shell/**'
+      - 'packages/subprocess/**'
+      - 'scripts/release/desktop-mac.ts'
       - '.github/workflows/desktop.yml'
   workflow_dispatch:
   # tag: publish a GitHub Release with unsigned artifacts. The signed and
@@ -29,6 +45,41 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # The shell's own gates. They need no JavaScript build, so a Rust mistake is
+  # reported in minutes instead of after the sidecar pack and the bundle.
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/desktop/src-tauri
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test
+
   bundle:
     strategy:
       fail-fast: false
@@ -60,19 +111,33 @@ jobs:
       - name: Pack sidecar
         run: node apps/desktop/scripts/pack-sidecar.mjs
 
+      # This job produces unsigned artifacts on both platforms. macOS signing
+      # and notarization live in scripts/release/desktop-mac.ts, which reads its
+      # identity and credentials from the build user's Keychain; Windows signing
+      # remains release work.
       - name: Build unsigned desktop app
+        if: runner.os == 'macOS'
+        run: node apps/desktop/scripts/pack-sidecar.mjs bundle
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ''
+
+      - name: Build unsigned desktop installers
+        if: runner.os == 'Windows'
         working-directory: apps/desktop
         run: pnpm exec tauri build
         env:
-          # This job produces unsigned artifacts on both platforms. macOS
-          # signing and notarization live in scripts/release/desktop-mac.ts,
-          # which reads its identity and credentials from the build user's
-          # Keychain; Windows signing remains release work.
           TAURI_SIGNING_PRIVATE_KEY: ''
 
       - name: Re-embed sidecar into macOS .app
         if: runner.os == 'macOS'
         run: node apps/desktop/scripts/pack-sidecar.mjs embed
+
+      # The bundle is only worth uploading if its own runtime starts: this runs
+      # the embedded Node against the embedded CLI with the launch daemon's
+      # PATH, and requires the ready line, the served index, and a clean SIGTERM.
+      - name: Smoke the bundled sidecar
+        if: runner.os == 'macOS'
+        run: apps/desktop/scripts/smoke-app.sh
 
       - name: Upload macOS artifact
         if: runner.os == 'macOS'

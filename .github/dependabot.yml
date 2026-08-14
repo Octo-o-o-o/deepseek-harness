@@ -28,6 +28,19 @@ updates:
       - "kind/dependency"
       - "area/infra"
 
+  # The desktop shell's Rust dependencies, including Tauri and its WebView.
+  - package-ecosystem: "cargo"
+    directory: "/apps/desktop/src-tauri"
+    schedule:
+      interval: "cron"
+      cronjob: "0 4 * * *"
+      timezone: "Asia/Shanghai"
+    cooldown:
+      default-days: 30
+    labels:
+      - "kind/dependency"
+      - "area/infra"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

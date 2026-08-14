@@ -9,7 +9,7 @@
 import { createHash } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, writeFile, rm, chmod, cp, readdir, lstat, readlink, symlink } from 'node:fs/promises'
+import { mkdir, readFile, writeFile, rm, chmod, cp, readdir, lstat, readlink, rename, symlink } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import { pipeline } from 'node:stream/promises'
@@ -21,6 +21,19 @@ const NODE_ARCHIVES = {
   'darwin-arm64': `node-v${NODE_VERSION}-darwin-arm64.tar.gz`,
   'darwin-x64': `node-v${NODE_VERSION}-darwin-x64.tar.gz`,
   'win32-x64': `node-v${NODE_VERSION}-win-x64.zip`,
+}
+/**
+ * Digest of each archive, from nodejs.org's SHASUMS256.txt for this version.
+ *
+ * Kept here rather than downloaded with the archive: a digest fetched from the
+ * same host at the same moment confirms the transfer, not the publisher, and it
+ * is the runtime a signed application ships. Update both together, and only
+ * from an official release.
+ */
+const NODE_DIGESTS = {
+  'darwin-arm64': '8294b7aa9b03997481c06babf1e8b270c859358f27da57a11509afe537ac381d',
+  'darwin-x64': 'd1b5e999db158c62fe8f7267a4476b035d8bd93b1a605bac24a3f0dd166e3316',
+  'win32-x64': '57f71ab3652e797d84acddc79c81cc9ff1c6ddb2a1974cdb83f00fee9bff4c73',
 }
 
 /** Extensions a bundler can emit a source path into. */
@@ -34,6 +47,19 @@ const cacheDir = join(sidecarRoot, 'cache')
 const distDir = join(sidecarRoot, 'dist')
 const appDir = join(distDir, 'app')
 const binDir = join(distDir, 'bin')
+
+/**
+ * Remove a directory tree.
+ *
+ * The payload is a deep `node_modules`, and removing one on macOS intermittently
+ * fails with `ENOTEMPTY` while the file system settles. `fs.rm` does not retry
+ * unless asked to, so a pack could fail before it started any work.
+ * @param {string} path
+ * @returns {Promise<void>}
+ */
+function removeTree(path) {
+  return rm(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+}
 
 /**
  * @param {string} command
@@ -110,6 +136,163 @@ function hostTriple() {
   throw new Error(`unsupported pack host ${key}`)
 }
 
+
+/**
+ * Restore the executable bit on helper binaries shipped inside `prebuilds`.
+ *
+ * A package that ships a helper program next to its addon normally makes it
+ * executable from its install script, and this install runs with
+ * `--ignore-scripts`. node-pty's `spawn-helper` is the one the payload needs:
+ * without the bit, `node-pty` loads and then every terminal fails with
+ * `posix_spawnp failed`. Addons themselves (`.node`) are loaded, not executed,
+ * so they are left alone.
+ * @param {string} dir - installed `node_modules`.
+ */
+async function restorePrebuildHelpers(dir) {
+  let fixed = 0
+  const walk = async (current, insidePrebuilds) => {
+    for (const entry of await readdir(current, { withFileTypes: true })) {
+      const path = join(current, entry.name)
+      if (entry.isSymbolicLink()) continue
+      if (entry.isDirectory()) {
+        await walk(path, insidePrebuilds || entry.name === 'prebuilds')
+        continue
+      }
+      if (!insidePrebuilds || !entry.isFile() || entry.name.endsWith('.node')) continue
+      const header = (await readFile(path)).subarray(0, 4)
+      if (header.length < 4) continue
+      const magic = header.readUInt32BE(0)
+      if (!MACH_O_MAGIC.has(magic)) continue
+      const mode = (await lstat(path)).mode
+      if ((mode & 0o111) !== 0) continue
+      await chmod(path, (mode & 0o777) | 0o755)
+      fixed += 1
+    }
+  }
+  await walk(dir, false)
+  if (fixed > 0) console.log(`pack-sidecar: restored the executable bit on ${String(fixed)} prebuilt helper(s)`)
+}
+
+/** Mach-O and universal-binary magic numbers, in both byte orders. */
+const MACH_O_MAGIC = new Set([0xfeedface, 0xfeedfacf, 0xcefaedfe, 0xcffaedfe, 0xcafebabe, 0xbebafeca])
+
+/** Recorded external package versions and the CLI version this payload carries. */
+const manifestPath = join(desktopRoot, 'payload-manifest.json')
+
+/**
+ * Every package in an installed tree, as `name` → `version`.
+ * @param {string} nodeModules
+ * @returns {Promise<Record<string, string>>}
+ */
+async function installedPackages(nodeModules) {
+  /** @type {Record<string, string>} */
+  const found = {}
+  const walk = async (dir, scope) => {
+    let entries
+    try {
+      entries = await readdir(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory() && !entry.isSymbolicLink()) continue
+      if (entry.name.startsWith('.')) continue
+      if (scope === undefined && entry.name.startsWith('@')) {
+        await walk(join(dir, entry.name), entry.name)
+        continue
+      }
+      const path = join(dir, entry.name)
+      try {
+        const manifest = JSON.parse(await readFile(join(path, 'package.json'), 'utf8'))
+        if (typeof manifest.name === 'string' && typeof manifest.version === 'string') {
+          found[manifest.name] = manifest.version
+        }
+      } catch {
+        // A directory without a readable package.json is not an installed package.
+      }
+      await walk(join(path, 'node_modules'), undefined)
+    }
+  }
+  await walk(nodeModules, undefined)
+  return found
+}
+
+/**
+ * The payload's own packages, which are built from this checkout and therefore
+ * carry the repository version rather than a recorded one.
+ * @param {string} name
+ * @returns {boolean}
+ */
+function isLocalPackage(name) {
+  return name.startsWith('@deepseek-ai/')
+}
+
+/**
+ * Compare the installed external packages against `payload-manifest.json`.
+ *
+ * The install resolves ranges (`commander ^15.0.0`) against the registry, so the
+ * same commit packed on two days can ship different code. Recording the resolved
+ * versions turns that into a build failure instead of a silent difference in a
+ * signed artifact. `node scripts/pack-sidecar.mjs manifest` records the current
+ * resolution deliberately.
+ * @param {string} nodeModules
+ * @param {string} cliVersion
+ */
+async function assertPayloadManifest(nodeModules, cliVersion) {
+  const installed = await installedPackages(nodeModules)
+  const external = Object.fromEntries(
+    Object.entries(installed).filter(([name]) => !isLocalPackage(name)).sort(([a], [b]) => (a < b ? -1 : 1)),
+  )
+  const record = { cli: cliVersion, node: NODE_VERSION, packages: external }
+  if (process.argv[2] === 'manifest') {
+    await writeFile(manifestPath, JSON.stringify(record, null, 2) + '\n')
+    console.log(`pack-sidecar: recorded ${String(Object.keys(external).length)} external package(s) in payload-manifest.json`)
+    return
+  }
+  let recorded
+  try {
+    recorded = JSON.parse(await readFile(manifestPath, 'utf8'))
+  } catch {
+    throw new Error('pack-sidecar: payload-manifest.json is missing; run `node scripts/pack-sidecar.mjs manifest`')
+  }
+  const drift = []
+  if (recorded.node !== NODE_VERSION) drift.push(`node ${String(recorded.node)} -> ${NODE_VERSION}`)
+  if (recorded.cli !== cliVersion) drift.push(`@deepseek-ai/dsh ${String(recorded.cli)} -> ${cliVersion}`)
+  for (const [name, version] of Object.entries(external)) {
+    const was = recorded.packages?.[name]
+    if (was === undefined) drift.push(`+ ${name}@${version}`)
+    else if (was !== version) drift.push(`${name} ${was} -> ${version}`)
+  }
+  for (const name of Object.keys(recorded.packages ?? {})) {
+    if (external[name] === undefined) drift.push(`- ${name}`)
+  }
+  if (drift.length > 0) {
+    throw new Error(
+      `pack-sidecar: payload differs from payload-manifest.json (${String(drift.length)}): ${drift.slice(0, 10).join(', ')}` +
+        '\n  Re-run with the `manifest` step to accept the new resolution.',
+    )
+  }
+  console.log(`pack-sidecar: payload matches payload-manifest.json (${String(Object.keys(external).length)} external package(s))`)
+}
+
+/**
+ * Refuse a build whose three desktop version declarations disagree.
+ *
+ * The bundle takes `CFBundleShortVersionString` from `tauri.conf.json`, the DMG
+ * name from `package.json`, and the crate version from `Cargo.toml`; nothing
+ * else compares them.
+ * @returns {Promise<string>} the agreed version.
+ */
+async function assertDesktopVersion() {
+  const pkg = JSON.parse(await readFile(join(desktopRoot, 'package.json'), 'utf8')).version
+  const conf = JSON.parse(await readFile(join(desktopRoot, 'src-tauri/tauri.conf.json'), 'utf8')).version
+  const cargo = /^version = "([^"]+)"$/m.exec(await readFile(join(desktopRoot, 'src-tauri/Cargo.toml'), 'utf8'))?.[1]
+  if (pkg !== conf || pkg !== cargo) {
+    throw new Error(`pack-sidecar: desktop versions disagree: package.json ${String(pkg)}, tauri.conf.json ${String(conf)}, Cargo.toml ${String(cargo)}`)
+  }
+  return pkg
+}
+
 /**
  * Assemble the payload from the repository's official release tarballs plus
  * an offline npm install. pnpm deploy keeps vendor packages as workspace
@@ -117,10 +300,11 @@ function hostTriple() {
  * bundle; npm's flat install carries every package as real directories.
  */
 async function deployApp() {
-  await rm(appDir, { recursive: true, force: true })
+  await assertDesktopVersion()
+  await removeTree(appDir)
   await mkdir(distDir, { recursive: true })
   const packRoot = join(sidecarRoot, 'pack')
-  await rm(packRoot, { recursive: true, force: true })
+  await removeTree(packRoot)
   const packEnv = { ...process.env, CI: 'true' }
   const tsx = join(repoRoot, 'node_modules/.bin/tsx')
   for (const family of ['vendor', 'dsh']) {
@@ -161,14 +345,21 @@ async function deployApp() {
     if (tarball !== undefined) deps[name] = 'file:' + tarball
   }
   const consumer = join(sidecarRoot, 'consumer')
-  await rm(consumer, { recursive: true, force: true })
+  await removeTree(consumer)
   await mkdir(consumer, { recursive: true })
   await writeFile(
     join(consumer, 'package.json'),
     JSON.stringify({ name: 'dshd-sidecar', version: '0.0.0', private: true, dependencies: deps }, null, 2) + '\n',
   )
   // Optional dependencies stay: koffi and the native prebuild families load from them.
-  await run('npm', ['install', '--no-audit', '--no-fund', '--package-lock=false'], { cwd: consumer, env: packEnv })
+  //
+  // `--ignore-scripts`: this install runs on the machine that holds the
+  // Developer ID identity, and a dependency's install script would execute
+  // there with that machine's privileges. The payload needs no build step —
+  // every native package it carries ships prebuilt binaries — so the scripts
+  // have nothing to contribute. `assertPayloadManifest` then rejects a tree
+  // whose external package versions are not the recorded ones.
+  await run('npm', ['install', '--no-audit', '--no-fund', '--package-lock=false', '--ignore-scripts'], { cwd: consumer, env: packEnv })
   const required = [
     join(consumer, 'node_modules/@deepseek-ai/dsh/lib/bin.js'),
     join(consumer, 'node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html'),
@@ -182,15 +373,17 @@ async function deployApp() {
       throw new Error('deploy missing ' + path)
     }
   }
+  await assertPayloadManifest(join(consumer, 'node_modules'), manifests.get('@deepseek-ai/dsh')?.version ?? 'unknown')
   await cp(join(consumer, 'node_modules'), join(appDir, 'node_modules'), { recursive: true })
   // Lay the CLI package contents at the payload root: the shell expects app/lib/bin.js.
   await cp(join(consumer, 'node_modules/@deepseek-ai/dsh'), appDir, { recursive: true })
+  await restorePrebuildHelpers(join(appDir, 'node_modules'))
   await stripAbsoluteSymlinks(join(appDir, 'node_modules'))
   await pruneNonHostArtifacts(appDir)
   await stripDevArtifacts(join(appDir, 'node_modules'))
   await stripDevArtifacts(appDir)
   await scrubCheckoutPaths(appDir)
-  await rm(consumer, { recursive: true, force: true })
+  await removeTree(consumer)
 }
 
 async function pathExists(path) {
@@ -206,20 +399,23 @@ async function installNodeRuntime() {
   const triple = hostTriple()
   const archive = NODE_ARCHIVES[triple]
   const url = `https://nodejs.org/dist/v${NODE_VERSION}/${archive}`
-  const sumsUrl = `https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt`
+  const expected = NODE_DIGESTS[triple]
   await mkdir(cacheDir, { recursive: true })
   const archivePath = join(cacheDir, archive)
-  const sumsPath = join(cacheDir, `SHASUMS256-${NODE_VERSION}.txt`)
-  if (!(await exists(archivePath))) await download(url, archivePath)
-  if (!(await exists(sumsPath))) await download(sumsUrl, sumsPath)
-  const expected = (await readFile(sumsPath, 'utf8'))
-    .split('\n')
-    .map(line => line.trim())
-    .find(line => line.endsWith(`  ${archive}`))
-    ?.slice(0, 64)
-  if (expected === undefined) throw new Error(`no sha256 for ${archive}`)
-  const actual = await sha256File(archivePath)
-  if (actual !== expected) throw new Error(`sha256 mismatch for ${archive}`)
+  // An interrupted download used to leave a short file at the final path, and
+  // every later run then failed the digest check until someone cleared the
+  // cache by hand. Fetch to a temporary name and rename only what verifies.
+  if (!(await exists(archivePath)) || (await sha256File(archivePath)) !== expected) {
+    await rm(archivePath, { force: true })
+    const partial = join(cacheDir, `${archive}.${String(process.pid)}.part`)
+    await download(url, partial)
+    const actual = await sha256File(partial)
+    if (actual !== expected) {
+      await rm(partial, { force: true })
+      throw new Error(`pack-sidecar: sha256 mismatch for ${archive}: expected ${expected}, got ${actual}`)
+    }
+    await rename(partial, archivePath)
+  }
   await mkdir(binDir, { recursive: true })
   if (triple.startsWith('win32')) {
     const extractRoot = join(tmpdir(), `dsh-node-${NODE_VERSION}-${process.pid}`)
@@ -254,7 +450,44 @@ async function exists(path) {
   }
 }
 
+/**
+ * Load the payload's native packages with the bundled runtime.
+ *
+ * The install runs with `--ignore-scripts`, so every native package has to work
+ * from a prebuilt binary, and the prune step keeps only the host's. Starting the
+ * web server proves neither: it opens no terminal and loads no addon. This
+ * opens a pseudo-terminal and the bundled `sharp` and `koffi` addons with the
+ * runtime that ships, plus the runtime's own SQLite, which is where a payload
+ * built for another architecture fails.
+ */
+async function checkNativeModules() {
+  const node = process.platform === 'win32' ? join(binDir, 'node.exe') : join(binDir, 'node')
+  const source = `
+    const pty = require('node-pty')
+    const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh'
+    const term = pty.spawn(shell, [], { name: 'xterm-color', cols: 80, rows: 24 })
+    if (typeof term.pid !== 'number') throw new Error('node-pty did not report a pid')
+    term.kill()
+    const { DatabaseSync } = require('node:sqlite')
+    const db = new DatabaseSync(':memory:')
+    db.exec('create table probe (id integer primary key)')
+    db.close()
+    require('sharp')
+    require('koffi')
+    console.log('native ok')
+  `
+  const { code, stdout, stderr } = await capture(node, ['-e', source], {
+    cwd: appDir,
+    env: { ...process.env, NODE_PATH: join(appDir, 'node_modules') },
+  })
+  if (code !== 0 || !stdout.includes('native ok')) {
+    throw new Error(`pack-sidecar: native module probe failed (${String(code)}): ${stderr.trim() || stdout.trim()}`)
+  }
+  console.log('pack-sidecar: node-pty, sharp, koffi, and node:sqlite work with the bundled runtime')
+}
+
 async function selfCheck() {
+  await checkNativeModules()
   const node = process.platform === 'win32' ? join(binDir, 'node.exe') : join(binDir, 'node')
   const binJs = join(appDir, 'lib/bin.js')
   const home = join(tmpdir(), `dsh-pack-check-${String(process.pid)}`)
@@ -323,16 +556,47 @@ async function selfCheck() {
 }
 
 /**
+ * Build the application bundle.
+ *
+ * rustc records each compilation unit's absolute source path in the binary,
+ * which on any build machine means a path under the build user's home;
+ * `assertNoBuildMachinePaths` refuses a bundle that carries one. The remap is
+ * therefore part of building the bundle rather than a step of the signed
+ * release alone, so the package script, CI, and the release all produce the
+ * same executable. The encoded form carries paths containing spaces, which the
+ * whitespace-split `RUSTFLAGS` cannot.
+ *
+ * The flag also reaches proc-macro crates, which is why the release profile
+ * leaves host units unstripped; see `[profile.release.build-override]` in
+ * `src-tauri/Cargo.toml`.
+ */
+async function bundleApp() {
+  await run('pnpm', ['exec', 'tauri', 'build', '--bundles', 'app'], {
+    cwd: desktopRoot,
+    env: {
+      ...process.env,
+      CARGO_ENCODED_RUSTFLAGS: `--remap-path-prefix=${homedir()}=/build`,
+    },
+  })
+}
+
+/**
+ * Where `bundleApp` leaves the application bundle; the signed release and the
+ * smoke script both have to find it.
+ * @returns {string}
+ */
+function appBundlePath() {
+  return join(desktopRoot, 'src-tauri/target/release/bundle/macos/dshd.app')
+}
+
+/**
  * Tauri's resource copy drops directory symlinks, so the bundled
  * `node_modules` would keep `.pnpm` and lose every hoisted package.
  * Re-copy with `cp -a` after `tauri build` so the .app matches the
  * self-checked tree.
  */
 async function embedIntoApp() {
-  const appPath = join(
-    desktopRoot,
-    'src-tauri/target/release/bundle/macos/dshd.app',
-  )
+  const appPath = appBundlePath()
   const destRoot = join(appPath, 'Contents/Resources')
   if (!(await pathExists(join(appPath, 'Contents/MacOS/dshd')))) {
     throw new Error(`embed: missing app bundle at ${appPath}`)
@@ -562,8 +826,10 @@ async function relativizeSymlinks(dir) {
 }
 
 const step = process.argv[2] ?? 'all'
-if (step === 'deploy' || step === 'all') await deployApp()
+if (step === 'deploy' || step === 'all' || step === 'manifest') await deployApp()
 if (step === 'runtime' || step === 'all') await installNodeRuntime()
 if (step === 'check' || step === 'all') await selfCheck()
+if (step === 'bundle') await bundleApp()
+if (step === 'app-path') console.log(appBundlePath())
 if (step === 'embed') await embedIntoApp()
 console.log('pack-sidecar: ok')

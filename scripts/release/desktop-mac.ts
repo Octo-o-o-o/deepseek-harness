@@ -9,9 +9,9 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { openSync, readSync, closeSync, existsSync, readdirSync, mkdtempSync, rmSync, cpSync, symlinkSync, readFileSync } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { openSync, readSync, closeSync, existsSync, readdirSync, mkdtempSync, rmSync, cpSync, symlinkSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const DEVELOPER_ID_PREFIX = 'Developer ID Application:'
@@ -136,6 +136,32 @@ export function assertMacReleaseReady(options: MacReleaseOptions): MacReleasePla
   return { identity, notarization: resolveNotarizationSource(options.env) }
 }
 
+/**
+ * Mount the finished image and assess the application a user would open.
+ *
+ * The signature and the ticket were verified on the bundle in the build tree,
+ * which is not what anyone receives. This checks the copy inside the image,
+ * through Gatekeeper, and it is the last step before the digest is published.
+ * @param dmgPath - the stapled disk image.
+ * @param env - environment for the verification tools.
+ */
+function verifyDistributedImage(dmgPath: string, env: NodeJS.ProcessEnv): void {
+  const mountPoint = mkdtempSync(join(tmpdir(), 'dshd-verify-'))
+  try {
+    run('hdiutil', ['attach', dmgPath, '-nobrowse', '-readonly', '-mountpoint', mountPoint], env)
+    try {
+      const mounted = join(mountPoint, 'dshd.app')
+      run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', mounted], env)
+      run('spctl', ['--assess', '--type', 'execute', '--verbose=4', mounted], env)
+      assertNodeEntitlements(mounted)
+    } finally {
+      run('hdiutil', ['detach', mountPoint, '-force'], env)
+    }
+  } finally {
+    rmSync(mountPoint, { recursive: true, force: true })
+  }
+}
+
 /** Whether the first four bytes of `path` are a Mach-O or universal-binary magic number. */
 function isMachO(path: string): boolean {
   let fd: number
@@ -196,8 +222,8 @@ function run(command: string, args: readonly string[], env: NodeJS.ProcessEnv, c
   if (result.status !== 0) throw new Error(`${command} exited with ${String(result.status)}`)
 }
 
-function capture(command: string, args: readonly string[]): string {
-  const result = spawnSync(command, args, { encoding: 'utf8' })
+function capture(command: string, args: readonly string[], cwd?: string): string {
+  const result = spawnSync(command, args, { encoding: 'utf8', ...(cwd === undefined ? {} : { cwd }) })
   if (result.error !== undefined) throw result.error
   if (result.status !== 0) throw new Error(`${command} ${args.join(' ')} exited with ${String(result.status)}: ${result.stderr.trim()}`)
   return result.stdout
@@ -295,17 +321,15 @@ export function releaseDesktopMac(): void {
   const buildEnv = buildEnvironment(process.env)
   run('pnpm', ['--workspace-root', 'run', 'build'], buildEnv, repoRoot)
   run('node', ['scripts/pack-sidecar.mjs'], buildEnv, desktopRoot)
-  // rustc records each compilation unit's absolute source path in the binary,
-  // which for a local build means the build user's home. The remap keeps the
-  // shipped executable free of it; the encoded form carries paths containing
-  // spaces, which the whitespace-split `RUSTFLAGS` cannot.
-  run('pnpm', ['exec', 'tauri', 'build', '--bundles', 'app'], {
-    ...buildEnv,
-    CARGO_ENCODED_RUSTFLAGS: `--remap-path-prefix=${homedir()}=/build`,
-  }, desktopRoot)
+  // The bundle step owns the source-path remap every build path needs; see
+  // `bundleApp` in pack-sidecar.mjs.
+  run('node', ['scripts/pack-sidecar.mjs', 'bundle'], buildEnv, desktopRoot)
   run('node', ['scripts/pack-sidecar.mjs', 'embed'], buildEnv, desktopRoot)
 
-  const appPath = join(desktopRoot, 'src-tauri/target/release/bundle/macos/dshd.app')
+  // The bundle step owns where the bundle lands, because the explicit build
+  // target puts it under a triple-named directory.
+  const [appPath] = capture('node', ['scripts/pack-sidecar.mjs', 'app-path'], desktopRoot).trim().split('\n')
+  if (appPath === undefined || appPath === '') throw new Error('pack-sidecar did not report the application bundle path')
   const sign = (target: string, grants: string | undefined): void => {
     run('codesign', [
       '--force', '--options', 'runtime', '--timestamp',
@@ -347,7 +371,11 @@ export function releaseDesktopMac(): void {
   run('xcrun', ['notarytool', 'submit', dmgPath, ...notarizationArguments(plan.notarization, process.env), '--wait'], process.env)
   run('xcrun', ['stapler', 'staple', dmgPath], buildEnv)
   run('xcrun', ['stapler', 'validate', dmgPath], buildEnv)
+  verifyDistributedImage(dmgPath, buildEnv)
+  const digest = capture('shasum', ['-a', '256', dmgPath]).trim().split(/\s+/)[0] ?? ''
+  writeFileSync(join(dirname(dmgPath), 'SHA256SUMS.txt'), `${digest}  ${basename(dmgPath)}\n`)
   console.log(`macOS release ready: ${dmgPath}`)
+  console.log(`sha256: ${digest}`)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

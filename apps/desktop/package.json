@@ -7,7 +7,7 @@
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",
-    "build": "tauri build --bundles app && node scripts/pack-sidecar.mjs embed",
+    "build": "node scripts/pack-sidecar.mjs bundle && node scripts/pack-sidecar.mjs embed",
     "pack": "node scripts/pack-sidecar.mjs",
     "dist:mac": "node --import tsx ../../scripts/release/desktop-mac.ts"
   },

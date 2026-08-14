@@ -26,6 +26,14 @@ thiserror = "2"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# Build scripts and proc-macro crates are host units and are loaded back by
+# rustc during the same build. Stripping a proc-macro dynamic library that also
+# carries remapped source paths (see .cargo/config.toml) leaves a Mach-O whose
+# LINKEDIT string pool is mis-aligned, which dyld refuses to load and which then
+# fails every crate using a derive macro with `E0463`.
+[profile.release.build-override]
+strip = false
+
 [profile.release]
 codegen-units = 1
 lto = true

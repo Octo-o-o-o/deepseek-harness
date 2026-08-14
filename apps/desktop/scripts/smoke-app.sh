@@ -3,7 +3,7 @@
 # Usage: apps/desktop/scripts/smoke-app.sh [path-to-dshd.app]
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-app=${1:-"$root/src-tauri/target/release/bundle/macos/dshd.app"}
+app=${1:-"$(node "$root/scripts/pack-sidecar.mjs" app-path | head -n 1)"}
 node="$app/Contents/Resources/bin/node"
 bin="$app/Contents/Resources/app/lib/bin.js"
 if [ ! -x "$node" ] || [ ! -f "$bin" ]; then
