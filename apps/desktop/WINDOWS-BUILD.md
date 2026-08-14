@@ -33,7 +33,7 @@ git checkout desktop-app
 git log --oneline -1
 ```
 
-Done when `git log` shows `d3cbfc436a` or later.
+Done when `git log` shows `cbb9155e07` or later.
 
 ### 2. Enable pnpm and install
 
@@ -52,7 +52,7 @@ Done when the install exits 0.
 pnpm run build
 ```
 
-This emits types with `tsc`, bundles runtime with `tsdown`, then builds the Web frontend with Vite. It passes on macOS and contains no platform-specific code, but has not been run on Windows.
+This emits types with `tsc`, bundles runtime with `tsdown`, then builds the Web frontend with Vite. It contains no platform-specific code and passes on both hosts.
 
 Done when both `apps/cli/lib/bin.js` and `apps/web/dist/index.html` exist.
 
@@ -64,7 +64,7 @@ node apps/desktop/scripts/pack-sidecar.mjs
 
 Four things happen here: the repository is packed into release tarballs, npm installs them offline into a flat `node_modules`, `node-v24.19.0-win-x64.zip` is downloaded and checksum-verified, and a PATH-stripped boot self-check runs against the result.
 
-**This is the step most likely to stop you.** Two Windows blockers are already fixed (section D). One more is predicted but unverified: `selfCheck()` gives the child a POSIX `PATH=/usr/bin:/bin:...` and passes no `SystemRoot`. Node on Windows may not start without `SystemRoot`, which would surface as "sidecar self-check timed out waiting for ready line". If that happens, add `SystemRoot: process.env.SystemRoot` and `TEMP: process.env.TEMP` to the `env` object inside `selfCheck` in `scripts/pack-sidecar.mjs` and run it again. Also note: a first boot of a freshly packed payload can exceed the 15 s timeout while Defender scans the new files; once warm, re-running `node apps/desktop/scripts/pack-sidecar.mjs check` passes.
+**This is the step that produced every Windows blocker in section D**, all of them now fixed. One behavior is not a bug and has no fix: a first boot of a freshly packed payload can exceed the 15 s self-check timeout while Defender scans the new files. Once they are warm, `node apps/desktop/scripts/pack-sidecar.mjs check` passes on its own — the `deploy` and `runtime` steps do not need repeating.
 
 Done when the output ends with `pack-sidecar: ok` and `apps\desktop\sidecar\dist\bin\node.exe` exists.
 
@@ -103,9 +103,9 @@ The following four were hit and fixed on a real Windows 11 x64 host on 2026-08-1
 
 **tar failed with `Cannot connect to C: resolve failed`.** Git's GNU tar resolves before System32 bsdtar on PATH; GNU tar reads the `C:` drive prefix as a remote host and cannot extract zip (the Node runtime archive is a zip). Fix: `tarball.ts` and `pack-sidecar.mjs` use `%SystemRoot%\System32\tar.exe` explicitly on win32.
 
-**Self-check timeout (as predicted).** With `SystemRoot` and `TEMP` added to `selfCheck`'s env the child starts normally; if a first run on a fresh payload still times out, see the cold-cache note in B4.
+**Self-check timeout (as predicted).** `selfCheck`'s env now carries `SystemRoot` and `TEMP`. That was necessary but not sufficient: the first run still timed out, and reproducing the same spawn by hand started the sidecar immediately, which identified the remaining delay as Defender scanning a freshly written payload rather than a missing variable. See the cold-cache note in B4.
 
-These fixes keep macOS behavior unchanged, like the two CI ones, and were verified by a complete build that produced both NSIS and MSI.
+Every one of these fixes is guarded by `process.platform === 'win32'`, and macOS was re-verified against them: `pack-sidecar.mjs check` passes, `scripts/release` unit tests pass 18/18, and both `tarball.ts` tar call sites read a real tarball. The Windows side was verified by a complete build that produced both NSIS and MSI.
 
 ## E. Reporting a failure
 

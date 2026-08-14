@@ -33,7 +33,7 @@ git checkout desktop-app
 git log --oneline -1
 ```
 
-`git log` 显示 `d3cbfc436a` 或更新即为完成。
+`git log` 显示 `cbb9155e07` 或更新即为完成。
 
 ### 2. 启用 pnpm 并安装依赖
 
@@ -52,7 +52,7 @@ pnpm 版本由仓库的 `packageManager` 字段钉死，`corepack` 会取对应�
 pnpm run build
 ```
 
-先用 `tsc` 出类型，再用 `tsdown` 打运行时，最后用 Vite 构建 Web 前端。这一步在 macOS 上是通的，且不含平台相关代码，但没有在 Windows 上跑过。
+先用 `tsc` 出类型，再用 `tsdown` 打运行时，最后用 Vite 构建 Web 前端。这一步不含平台相关代码，两个平台都通过。
 
 `apps/cli/lib/bin.js` 与 `apps/web/dist/index.html` 都存在即为完成。
 
@@ -64,7 +64,7 @@ node apps/desktop/scripts/pack-sidecar.mjs
 
 这一步做四件事：把仓库打成 release tarball，用 npm 离线装成扁平的 `node_modules`，下载并校验 `node-v24.19.0-win-x64.zip`，最后剥掉 PATH 对结果跑一次启动自检。
 
-**这是最可能卡住你的一步。** 两个 Windows 拦路问题已修（见 D 区）。还有一个是预判而非实测：`selfCheck()` 给子进程写的是 POSIX 的 `PATH=/usr/bin:/bin:...`，且没有传 `SystemRoot`。Windows 上 Node 缺 `SystemRoot` 可能起不来，表现为"sidecar self-check timed out waiting for ready line"。真撞上了，在 `scripts/pack-sidecar.mjs` 的 `selfCheck` 里给 `env` 补上 `SystemRoot: process.env.SystemRoot` 与 `TEMP: process.env.TEMP`，再跑一次。另注意：全新 payload 首跑可能被 Defender 实时扫描拖过 15 秒超时，属冷缓存现象；文件热了之后重跑 `node apps/desktop/scripts/pack-sidecar.mjs check` 即可通过。
+**D 区的每一个 Windows 拦路问题都出自这一步**，现已全部修掉。有一个现象不是缺陷、也没有修法：全新 payload 首跑可能被 Defender 实时扫描拖过 15 秒自检超时。文件热了之后单独重跑 `node apps/desktop/scripts/pack-sidecar.mjs check` 即可通过，`deploy` 与 `runtime` 两步无需重来。
 
 输出以 `pack-sidecar: ok` 结束、且 `apps\desktop\sidecar\dist\bin\node.exe` 存在，即为完成。
 
@@ -103,9 +103,9 @@ Windows 侧没有代码签名证书，安装时 SmartScreen 会拦一次，需�
 
 **tar 报 `Cannot connect to C: resolve failed`。** PATH 上 Git 的 GNU tar 先于 System32 的 bsdtar 被解析；GNU tar 把 `C:` 盘符前缀当远程主机，也不能解 zip（node 运行时正是 zip）。修复：`tarball.ts` 与 `pack-sidecar.mjs` 在 win32 显式使用 `%SystemRoot%\System32\tar.exe`。
 
-**self-check 超时（与预判一致）。** `selfCheck` 的 env 补上 `SystemRoot` 与 `TEMP` 后子进程可正常启动；若全新 payload 首跑仍超时，见 B4 的冷缓存说明。
+**self-check 超时（与预判一致）。** `selfCheck` 的 env 现已带上 `SystemRoot` 与 `TEMP`。这一条必要但不充分：首跑仍然超时，而手动用同样参数复现 spawn 时 sidecar 秒起，由此定位到剩余延迟是 Defender 扫描新落盘的 payload，而非缺变量。见 B4 的冷缓存说明。
 
-以上修复与 CI 上的两处一样保持 macOS 行为不变，并已由一次产出 NSIS + MSI 的完整构建验证。
+以上每处修复都由 `process.platform === 'win32'` 守卫，且 macOS 侧已对着它们复验：`pack-sidecar.mjs check` 通过、`scripts/release` 单测 18/18 通过、`tarball.ts` 两个 tar 调用点都读通了真实 tarball。Windows 侧则由一次产出 NSIS + MSI 的完整构建验证。
 
 ## E. 失败了怎么报
 
