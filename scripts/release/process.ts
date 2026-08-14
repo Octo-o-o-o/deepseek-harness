@@ -26,6 +26,19 @@ export interface CommandResult {
 }
 
 /**
+ * Windows resolves JS-tool shims (pnpm, npm, tsx) to batch scripts: the bare
+ * name finds no .exe (ENOENT) and the .cmd form is rejected without a shell
+ * (CVE-2024-27980). Real executables (git, tar) stay direct on every host.
+ * @param command - executable name or path.
+ * @returns Whether spawn needs a shell for this command.
+ */
+function needsShell(command: string): boolean {
+  if (process.platform !== 'win32') return false
+  if (/\.(exe|com)$/i.test(command)) return false
+  return true
+}
+
+/**
  * Run a command and capture its output without judging the exit status.
  * @param command - executable name.
  * @param args - command arguments.
@@ -33,7 +46,7 @@ export interface CommandResult {
  * @returns The exit status and captured streams.
  */
 export function attempt(command: string, args: readonly string[], options: RunOptions = {}): CommandResult {
-  const result = spawnSync(command, [...args], { cwd: options.cwd, env: options.env, encoding: 'utf8' })
+  const result = spawnSync(command, [...args], { cwd: options.cwd, env: options.env, encoding: 'utf8', shell: needsShell(command) })
   if (result.error !== undefined) throw result.error
   return { status: result.status, stdout: result.stdout, stderr: result.stderr }
 }
@@ -61,7 +74,7 @@ export function capture(command: string, args: readonly string[], options: RunOp
  * @param options - working directory and environment.
  */
 export function run(command: string, args: readonly string[], options: RunOptions = {}): void {
-  const result = spawnSync(command, [...args], { cwd: options.cwd, env: options.env, stdio: 'inherit' })
+  const result = spawnSync(command, [...args], { cwd: options.cwd, env: options.env, stdio: 'inherit', shell: needsShell(command) })
   if (result.error !== undefined) throw result.error
   if (result.status !== 0) throw new Error(`${command} ${args.join(' ')} exited with ${String(result.status)}`)
 }

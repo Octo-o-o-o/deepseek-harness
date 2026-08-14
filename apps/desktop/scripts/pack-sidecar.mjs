@@ -73,6 +73,7 @@ function run(command, args, opts = {}) {
       cwd: opts.cwd ?? repoRoot,
       env: opts.env ?? process.env,
       stdio: 'inherit',
+      shell: needsShell(command),
     })
     child.on('error', reject)
     child.on('exit', (code) => {
@@ -94,6 +95,7 @@ function capture(command, args, opts = {}) {
       cwd: opts.cwd ?? repoRoot,
       env: opts.env ?? process.env,
       stdio: ['ignore', 'pipe', 'pipe'],
+      shell: needsShell(command),
     })
     let stdout = ''
     let stderr = ''
@@ -294,6 +296,41 @@ async function assertDesktopVersion() {
 }
 
 /**
+ * Path of a Node-installed CLI shim for the packing host.
+ *
+ * `spawn` without a shell executes a file, and on Windows the extensionless
+ * `node_modules/.bin/<name>` is a POSIX shell script it cannot run — the
+ * runnable sibling is `<name>.CMD`. Spawning the extensionless path there
+ * fails with ENOENT, which reads like a missing dependency rather than the
+ * wrong file extension.
+ * @param {string} name - bin name as it appears under node_modules/.bin.
+ * @returns {string} absolute path to the host-runnable shim.
+ */
+function nodeBin(name) {
+  const base = join(repoRoot, 'node_modules/.bin', name)
+  return process.platform === 'win32' ? `${base}.CMD` : base
+}
+
+/** `npm` itself is a shim with the same Windows rule. */
+const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+
+/**
+ * Windows ships bsdtar in System32, but a PATH `tar` is often Git's GNU tar,
+ * which reads the `C:` drive prefix as a remote host and cannot read zip.
+ */
+const TAR = process.platform === 'win32' ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'tar'
+
+/**
+ * Windows batch shims (.cmd/.bat) are not standalone executables: Node's
+ * CVE-2024-27980 hardening rejects spawning them without a shell (EINVAL).
+ * @param {string} command
+ * @returns {boolean}
+ */
+function needsShell(command) {
+  return process.platform === 'win32' && /\.(cmd|bat)$/i.test(command)
+}
+
+/**
  * Assemble the payload from the repository's official release tarballs plus
  * an offline npm install. pnpm deploy keeps vendor packages as workspace
  * symlinks and an absolute-link .pnpm zoo, both of which break inside an app
@@ -306,9 +343,8 @@ async function deployApp() {
   const packRoot = join(sidecarRoot, 'pack')
   await removeTree(packRoot)
   const packEnv = { ...process.env, CI: 'true' }
-  const tsx = join(repoRoot, 'node_modules/.bin/tsx')
   for (const family of ['vendor', 'dsh']) {
-    await run(tsx, ['scripts/release/pack.ts', '--family', family, '--out', join(packRoot, family)], { env: packEnv })
+    await run(nodeBin('tsx'), ['scripts/release/pack.ts', '--family', family, '--out', join(packRoot, family)], { env: packEnv })
   }
   const manifests = new Map()
   const tarballBy = new Map()
@@ -316,7 +352,7 @@ async function deployApp() {
     for (const filename of await readdir(join(packRoot, family))) {
       if (!filename.endsWith('.tgz')) continue
       const tarball = join(packRoot, family, filename)
-      const manifest = JSON.parse((await capture('tar', ['-xOf', tarball, 'package/package.json'])).stdout)
+      const manifest = JSON.parse((await capture(TAR, ['-xOf', tarball, 'package/package.json'])).stdout)
       manifests.set(manifest.name, manifest)
       tarballBy.set(manifest.name, tarball)
     }
@@ -359,7 +395,7 @@ async function deployApp() {
   // every native package it carries ships prebuilt binaries — so the scripts
   // have nothing to contribute. `assertPayloadManifest` then rejects a tree
   // whose external package versions are not the recorded ones.
-  await run('npm', ['install', '--no-audit', '--no-fund', '--package-lock=false', '--ignore-scripts'], { cwd: consumer, env: packEnv })
+  await run(NPM, ['install', '--no-audit', '--no-fund', '--package-lock=false', '--ignore-scripts'], { cwd: consumer, env: packEnv })
   const required = [
     join(consumer, 'node_modules/@deepseek-ai/dsh/lib/bin.js'),
     join(consumer, 'node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html'),
@@ -421,7 +457,7 @@ async function installNodeRuntime() {
     const extractRoot = join(tmpdir(), `dsh-node-${NODE_VERSION}-${process.pid}`)
     await rm(extractRoot, { recursive: true, force: true })
     await mkdir(extractRoot, { recursive: true })
-    await run('tar', ['-xf', archivePath, '-C', extractRoot])
+    await run(TAR, ['-xf', archivePath, '-C', extractRoot])
     const extracted = join(extractRoot, archive.replace(/\.zip$/, ''), 'node.exe')
     await cp(extracted, join(binDir, 'node.exe'))
     await rm(extractRoot, { recursive: true, force: true })
@@ -430,7 +466,7 @@ async function installNodeRuntime() {
   const extractRoot = join(tmpdir(), `dsh-node-${NODE_VERSION}-${process.pid}`)
   await rm(extractRoot, { recursive: true, force: true })
   await mkdir(extractRoot, { recursive: true })
-  await run('tar', ['-xzf', archivePath, '-C', extractRoot])
+  await run(TAR, ['-xzf', archivePath, '-C', extractRoot])
   const extracted = join(extractRoot, archive.replace(/\.tar\.gz$/, ''), 'bin', 'node')
   await cp(extracted, join(binDir, 'node'))
   await chmod(join(binDir, 'node'), 0o755)
@@ -500,6 +536,8 @@ async function selfCheck() {
       DSH_HOME: home,
       HOME: home,
       NODE_PATH: join(appDir, 'node_modules'),
+      SystemRoot: process.env.SystemRoot,
+      TEMP: process.env.TEMP,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -620,10 +658,24 @@ async function embedIntoApp() {
   await assertNoBuildMachinePaths(appPath)
 }
 
+/** Prebuild directory name for the packing host, the only one a payload needs. */
+function hostPrebuild() {
+  return `${process.platform}-${process.arch}`
+}
+
 /**
- * Remove platform prebuilds and SDK natives the desktop runtime never loads.
+ * Remove platform prebuilds and packages the desktop runtime never loads.
+ *
  * The Claude agent SDK alone carries a 256MB darwin binary through its optional
- * platform packages, and node-pty ships prebuilds for every OS.
+ * platform packages, and node-pty ships prebuilds for every OS. Prebuild
+ * directories are pruned by keeping the host triple rather than by naming the
+ * others: an unlisted triple (win32-arm64 shipped 26MB of Windows .pdb debug
+ * symbols into every macOS payload) is exactly the case a deny list misses.
+ *
+ * `@shikijs/langs` is a build-time dependency of the client UI: the browser
+ * receives highlighting through the built frontend and the served
+ * `/plugins/<id>/client.js` bundles, and a traced boot resolves nothing from
+ * the package. Payloads carry runtime modules only.
  */
 async function pruneNonHostArtifacts(dir) {
   const remove = async (rel) => {
@@ -635,10 +687,37 @@ async function pruneNonHostArtifacts(dir) {
   await remove('node_modules/@anthropic-ai/claude-agent-sdk-win32-x64')
   await remove('node_modules/@anthropic-ai/claude-agent-sdk-linux-x64')
   await remove('node_modules/@img/sharp-wasm32')
-  await remove('node_modules/node-pty/prebuilds/darwin-x64')
-  await remove('node_modules/node-pty/prebuilds/win32-x64')
-  await remove('node_modules/node-pty/prebuilds/linux-x64')
+  await remove('node_modules/@shikijs/langs')
+  await pruneForeignPrebuilds(join(dir, 'node_modules'))
   console.log('pack-sidecar: pruned non-host native artifacts')
+}
+
+/**
+ * Delete every `prebuilds/<triple>` directory that is not the packing host's,
+ * plus any `.pdb` left behind (debug symbols are never loaded).
+ */
+async function pruneForeignPrebuilds(modulesDir) {
+  const host = hostPrebuild()
+  const walk = async (current) => {
+    for (const entry of await readdir(current, { withFileTypes: true })) {
+      if (!entry.isDirectory()) {
+        if (entry.name.endsWith('.pdb')) await rm(join(current, entry.name), { force: true })
+        continue
+      }
+      const path = join(current, entry.name)
+      if (entry.name !== 'prebuilds') {
+        await walk(path)
+        continue
+      }
+      for (const triple of await readdir(path, { withFileTypes: true })) {
+        if (triple.isDirectory() && triple.name !== host) {
+          await rm(join(path, triple.name), { recursive: true, force: true })
+        }
+      }
+      await walk(path)
+    }
+  }
+  await walk(modulesDir)
 }
 
 /**

@@ -1,10 +1,8 @@
 src-tauri/target/
 src-tauri/gen/
-sidecar/cache/
-sidecar/dist/
+sidecar/
+dist/
 notes/
 *.log
 .cargo-home/
 .rustup-home/
-dist/
-sidecar/
