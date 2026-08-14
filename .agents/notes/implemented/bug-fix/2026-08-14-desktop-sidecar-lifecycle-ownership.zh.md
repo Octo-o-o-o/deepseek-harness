@@ -6,7 +6,7 @@ Status: implemented
 
 ## Problem
 
-[supervisor 那轮改造](2026-08-14-desktop-sidecar-supervisor.md)之后仍有四个生命周期缺陷。
+[supervisor 那轮改造](../feature/2026-08-14-desktop-sidecar-supervisor.md)之后仍有四个生命周期缺陷。
 
 `ChildTree::is_alive` 只问 leader。sidecar 会在自己的进程组里拉起 bash、pwsh 与选择器进程，因此一个收到 SIGTERM 就退出的 leader 会让整棵树看起来已死：强制 kill 被跳过，随后对日志 reader 的无上限 join 会一直等在仍被孙进程持有的管道端上。退出因此挂起。
 

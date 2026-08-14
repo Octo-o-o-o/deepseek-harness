@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-14-desktop-sidecar-lifecycle-ownership.md
-2026-08-14-desktop-sidecar-lifecycle-ownership.md: 3b3582f3fe960b173d377faa315243e71c45b038
-2026-08-14-desktop-sidecar-lifecycle-ownership.zh.md: 58af2972e5294453981fb9809eda87a18d0943d0
+2026-08-14-desktop-sidecar-lifecycle-ownership.md: 08b6e799c83d3afafb13451d49686cea23d8c196
+2026-08-14-desktop-sidecar-lifecycle-ownership.zh.md: bd78708423facbb186b2ab556668f8707a3ebd8c

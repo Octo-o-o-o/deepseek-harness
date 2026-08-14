@@ -6,7 +6,7 @@ English | [中文](2026-08-14-desktop-sidecar-lifecycle-ownership.zh.md)
 
 ## Problem
 
-Four lifecycle defects survived the [supervisor rework](2026-08-14-desktop-sidecar-supervisor.md).
+Four lifecycle defects survived the [supervisor rework](../feature/2026-08-14-desktop-sidecar-supervisor.md).
 
 `ChildTree::is_alive` asked only the leader. The sidecar starts bash, pwsh, and picker processes in its group, so a leader that exits on SIGTERM made the tree look dead: the forced kill was skipped and the unbounded join on the log readers then waited on pipe ends a surviving grandchild still held. Quit hung.
 
