@@ -61,12 +61,12 @@ APPLE_KEYCHAIN_PROFILE=dsh-notary pnpm run release:desktop-mac
 
 预检在构建之前运行，凭据出问题只花几秒而不是一整轮打包。它拒绝非 macOS 主机、Keychain 中没有 `Developer ID Application` 身份、需要它猜测的身份选择（改用 `DSH_SIGN_IDENTITY` 指定），以及缺失或不完整的公证凭据。凭据来自 `APPLE_KEYCHAIN_PROFILE`、`APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID` 一组，或 `APPLE_API_KEY` / `APPLE_API_KEY_ID` / `APPLE_API_ISSUER` 一组；不完整的一组是错误而非回落。发布变量不会传给构建与打包子进程，只到达 `codesign` 与 `notarytool`。
 
-挂载成品 DMG 复验：
+复验成品 DMG。公证票据 staple 在 DMG 上，因此 `stapler validate` 取的是磁盘映像；挂载后的应用由 Gatekeeper 检查，其 `source=Notarized Developer ID` 才是双击时真正解析到的结果：
 
 ```sh
+xcrun stapler validate apps/desktop/dist/dshd-0.1.0-arm64.dmg
 codesign --verify --deep --strict --verbose=2 "/Volumes/dshd/dshd.app"
 spctl --assess --type execute --verbose=4 "/Volumes/dshd/dshd.app"
-xcrun stapler validate "/Volumes/dshd/dshd.app"
 ```
 
 `scripts/pack-sidecar.mjs` 的步骤：`deploy`、`runtime`、`check`、`embed`（在 `tauri build` 之后）。自检要求 15 秒内出现就绪行、`GET /` 返回 200 且含 `__DSH_BOOT__`、SIGTERM 退出码 0，且 `PATH=/usr/bin:/bin:/usr/sbin:/sbin`。

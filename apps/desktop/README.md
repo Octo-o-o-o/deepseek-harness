@@ -61,12 +61,12 @@ APPLE_KEYCHAIN_PROFILE=dsh-notary pnpm run release:desktop-mac
 
 The preflight runs before the build, so a credential problem costs seconds rather than a full pack. It refuses a non-macOS host, a Keychain holding no `Developer ID Application` identity, an identity choice it would otherwise have to guess (set `DSH_SIGN_IDENTITY`), and missing or partial notarization credentials. Credentials come from `APPLE_KEYCHAIN_PROFILE`, the `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID` group, or the `APPLE_API_KEY` / `APPLE_API_KEY_ID` / `APPLE_API_ISSUER` group; a partial group is an error rather than a fallback. Release variables are withheld from the build and pack subprocesses and reach only `codesign` and `notarytool`.
 
-Verify a finished DMG by mounting it:
+Verify a finished DMG. The notarization ticket is stapled to the DMG, so `stapler validate` takes the disk image; the mounted application is checked by Gatekeeper, whose `source=Notarized Developer ID` is what a double-click resolves:
 
 ```sh
+xcrun stapler validate apps/desktop/dist/dshd-0.1.0-arm64.dmg
 codesign --verify --deep --strict --verbose=2 "/Volumes/dshd/dshd.app"
 spctl --assess --type execute --verbose=4 "/Volumes/dshd/dshd.app"
-xcrun stapler validate "/Volumes/dshd/dshd.app"
 ```
 
 `scripts/pack-sidecar.mjs` steps: `deploy`, `runtime`, `check`, `embed` (after `tauri build`). Self-check requires a ready line within 15s, `GET /` 200 with `__DSH_BOOT__`, and SIGTERM exit 0, with `PATH=/usr/bin:/bin:/usr/sbin:/sbin`.
