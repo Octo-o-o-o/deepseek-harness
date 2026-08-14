@@ -310,7 +310,10 @@ mod tests {
         fs::write(home.join("sessions/real.jsonl"), "real\n").unwrap();
         let report = migrate_legacy_home(&legacy, &home, InjectFault::None).unwrap();
         assert!(!report.migrated);
-        assert_eq!(fs::read_to_string(home.join("sessions/real.jsonl")).unwrap(), "real\n");
+        assert_eq!(
+            fs::read_to_string(home.join("sessions/real.jsonl")).unwrap(),
+            "real\n"
+        );
         assert!(!home.join("sessions/stale.jsonl").exists());
         let _ = fs::remove_dir_all(legacy);
         let _ = fs::remove_dir_all(home);

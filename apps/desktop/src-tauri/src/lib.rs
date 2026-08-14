@@ -200,7 +200,7 @@ fn boot_and_navigate(
     let spawned = spawn_sidecar(&spec).map_err(|err| err.to_string())?;
     phase = transition(phase, BootEvent::SpawnOk);
     let (process, ready) = spawned.into_parts();
-    write_sidecar_pid(&home, process.pid());
+    write_sidecar_pid(&home, process.pid(), &bin);
     state.supervisor.install(process);
     if state.supervisor.is_cancelled() {
         state.request_stop();

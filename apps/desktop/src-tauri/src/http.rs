@@ -22,6 +22,9 @@ pub enum HttpError {
     /// The peer did not return a parseable HTTP/1.1 response.
     #[error("invalid HTTP response")]
     InvalidResponse,
+    /// The peer announced `Transfer-Encoding: chunked` but the framing is malformed or truncated.
+    #[error("invalid chunked response body")]
+    InvalidChunkedBody,
     /// Transport failure.
     #[error(transparent)]
     Io(#[from] std::io::Error),
@@ -106,11 +109,62 @@ pub fn read_limited<R: Read>(reader: &mut R, max: usize) -> Result<Vec<u8>, Http
     }
 }
 
+/// Split the head from the body on the raw bytes, so chunk sizes stay aligned
+/// with the wire even when the body carries multi-byte UTF-8.
+fn split_head(raw: &[u8]) -> Option<(&[u8], &[u8])> {
+    raw.windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .map(|at| (&raw[..at], &raw[at + 4..]))
+}
+
+/// Whether the head declares `Transfer-Encoding: chunked`.
+///
+/// The sidecar's Node server omits `Content-Length` and chunks every `/api`
+/// and index response, so this is the normal case, not an edge case.
+fn is_chunked(head: &str) -> bool {
+    head.lines().skip(1).any(|line| {
+        let Some((name, value)) = line.split_once(':') else {
+            return false;
+        };
+        name.trim().eq_ignore_ascii_case("transfer-encoding")
+            && value
+                .split(',')
+                .any(|token| token.trim().eq_ignore_ascii_case("chunked"))
+    })
+}
+
+/// Concatenate the chunk payloads of an RFC 9112 chunked body.
+///
+/// Chunk extensions after the size are ignored; a trailer section is not
+/// parsed because the reply is complete at the terminating zero-size chunk.
+fn decode_chunked(body: &[u8]) -> Result<Vec<u8>, HttpError> {
+    let mut out = Vec::new();
+    let mut rest = body;
+    loop {
+        let line_end = rest
+            .windows(2)
+            .position(|window| window == b"\r\n")
+            .ok_or(HttpError::InvalidChunkedBody)?;
+        let header =
+            std::str::from_utf8(&rest[..line_end]).map_err(|_| HttpError::InvalidChunkedBody)?;
+        let size_text = header.split(';').next().unwrap_or(header).trim();
+        let size =
+            usize::from_str_radix(size_text, 16).map_err(|_| HttpError::InvalidChunkedBody)?;
+        rest = &rest[line_end + 2..];
+        if size == 0 {
+            return Ok(out);
+        }
+        if rest.len() < size + 2 {
+            return Err(HttpError::InvalidChunkedBody);
+        }
+        out.extend_from_slice(&rest[..size]);
+        rest = &rest[size + 2..];
+    }
+}
+
 fn parse_http_response(raw: &[u8]) -> Result<HttpResponse, HttpError> {
-    let text = String::from_utf8_lossy(raw);
-    let (head, body) = text
-        .split_once("\r\n\r\n")
-        .ok_or(HttpError::InvalidResponse)?;
+    let (head_bytes, body_bytes) = split_head(raw).ok_or(HttpError::InvalidResponse)?;
+    let head = String::from_utf8_lossy(head_bytes);
     let status_line = head.lines().next().ok_or(HttpError::InvalidResponse)?;
     let status = status_line
         .split_whitespace()
@@ -118,9 +172,14 @@ fn parse_http_response(raw: &[u8]) -> Result<HttpResponse, HttpError> {
         .ok_or(HttpError::InvalidResponse)?
         .parse()
         .map_err(|_| HttpError::InvalidResponse)?;
+    let body = if is_chunked(&head) {
+        decode_chunked(body_bytes)?
+    } else {
+        body_bytes.to_vec()
+    };
     Ok(HttpResponse {
         status,
-        body: body.to_string(),
+        body: String::from_utf8_lossy(&body).into_owned(),
     })
 }
 
@@ -168,5 +227,44 @@ mod tests {
     fn rejects_oversized_response() {
         let err = read_limited(&mut &b"abcdef"[..], 4).unwrap_err();
         assert!(matches!(err, HttpError::TooLarge));
+    }
+
+    /// The sidecar chunks every reply; an undecoded body is not parseable JSON.
+    #[test]
+    fn decodes_a_chunked_body() {
+        let raw = b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nConnection: close\r\nTransfer-Encoding: chunked\r\n\r\n5\r\n{\"a\":\r\n3\r\n1}\x20\r\n0\r\n\r\n";
+        let response = parse_http_response(raw).unwrap();
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body, "{\"a\":1} ");
+    }
+
+    #[test]
+    fn chunk_sizes_count_bytes_not_characters() {
+        // "中" is three bytes; a char-indexed decoder would truncate it.
+        let raw = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\n中ok\r\n0\r\n\r\n"
+            .as_bytes();
+        assert_eq!(parse_http_response(raw).unwrap().body, "中ok");
+    }
+
+    #[test]
+    fn ignores_chunk_extensions_and_accepts_uppercase_header() {
+        let raw =
+            b"HTTP/1.1 200 OK\r\nTRANSFER-ENCODING: Chunked\r\n\r\n2;name=value\r\nok\r\n0\r\n\r\n";
+        assert_eq!(parse_http_response(raw).unwrap().body, "ok");
+    }
+
+    #[test]
+    fn rejects_truncated_chunked_body() {
+        let raw = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n9\r\nshort\r\n";
+        assert!(matches!(
+            parse_http_response(raw),
+            Err(HttpError::InvalidChunkedBody)
+        ));
+    }
+
+    #[test]
+    fn keeps_identity_bodies_untouched() {
+        let raw = b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nping";
+        assert_eq!(parse_http_response(raw).unwrap().body, "ping");
     }
 }

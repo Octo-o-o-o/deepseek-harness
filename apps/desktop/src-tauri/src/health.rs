@@ -229,6 +229,38 @@ mod tests {
         assert!(!host_describe_ok(r#"{"result":{"ok":false}}"#));
     }
 
+    /// Serve one chunked reply, the framing the Node sidecar actually uses.
+    fn serve_once_chunked(body: &'static str) -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0_u8; 4096];
+            let _ = stream.read(&mut buf);
+            let framed = format!(
+                "HTTP/1.1 200 OK\r\nConnection: close\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{body}\r\n0\r\n\r\n",
+                body.len()
+            );
+            let _ = stream.write_all(framed.as_bytes());
+            let _ = stream.shutdown(std::net::Shutdown::Write);
+        });
+        port
+    }
+
+    #[test]
+    fn host_describe_accepts_a_chunked_reply() {
+        let port = serve_once_chunked(
+            r#"{"type":"server-response","rpcId":"desktop-boot","result":{"ok":true,"value":{}}}"#,
+        );
+        check_host_described(port, "abc").unwrap();
+    }
+
+    #[test]
+    fn client_ready_accepts_a_chunked_status() {
+        let port = serve_once_chunked(r#"{"ready":true}"#);
+        wait_desktop_client_ready(port, "nonce", Duration::from_secs(2)).unwrap();
+    }
+
     #[test]
     fn status_ready_requires_true() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();

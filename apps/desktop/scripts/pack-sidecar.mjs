@@ -353,18 +353,6 @@ async function embedIntoApp() {
 }
 
 /**
- * Rewrite absolute symlinks under `dir` into relative targets inside `dir`.
- * pnpm's deployed tree carries absolute links; Gatekeeper rejects absolute
- * symlinks inside an app bundle, so the embedded payload must be relativized
- * before signing. Non-absolute links and links pointing outside `dir` are
- * left untouched.
- */
-/**
- * Remove symlinks with absolute targets. npm writes absolute .bin shims when
- * dependencies are file: URLs; Gatekeeper rejects absolute symlinks inside an
- * app bundle, and dsh web never invokes npm bins, so the shims are dead weight.
- */
-/**
  * Remove platform prebuilds and SDK natives the desktop runtime never loads.
  * The Claude agent SDK alone carries a 256MB darwin binary through its optional
  * platform packages, and node-pty ships prebuilds for every OS.
@@ -470,6 +458,12 @@ async function scrubCheckoutPaths(dir) {
   if (files > 0) console.log('pack-sidecar: scrubbed checkout paths in ' + files + ' bundle(s)')
 }
 
+/**
+ * Remove symlinks with absolute targets. npm writes absolute .bin shims when
+ * dependencies are file: URLs; Gatekeeper rejects absolute symlinks inside an
+ * app bundle, and dsh web never invokes npm bins, so the shims are dead weight.
+ * Relative links are module-resolution structure and must survive.
+ */
 async function stripAbsoluteSymlinks(dir) {
   let removed = 0
   const walk = async (current) => {
@@ -481,7 +475,7 @@ async function stripAbsoluteSymlinks(dir) {
       }
       if (!entry.isSymbolicLink()) continue
       const target = await readlink(path)
-NaN
+      if (!target.startsWith('/')) continue
       await rm(path)
       removed += 1
     }
@@ -490,6 +484,13 @@ NaN
   if (removed > 0) console.log('pack-sidecar: stripped ' + removed + ' absolute symlink(s)')
 }
 
+/**
+ * Rewrite absolute symlinks under `dir` into relative targets inside `dir`.
+ * pnpm's deployed tree carries absolute links; Gatekeeper rejects absolute
+ * symlinks inside an app bundle, so the embedded payload must be relativized
+ * before signing. Non-absolute links and links pointing outside `dir` are
+ * left untouched.
+ */
 async function relativizeSymlinks(dir) {
   const root = resolve(dir)
   let fixed = 0

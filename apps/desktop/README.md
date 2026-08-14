@@ -1,5 +1,7 @@
 # dshd
 
+English | [中文](README.zh.md)
+
 Tauri 2 shell that starts a local `dsh web` sidecar on `127.0.0.1`, waits for the ready line, checks `__DSH_BOOT__` and `host.describe`, then loads the existing Web GUI in a WebView.
 
 ```
@@ -50,19 +52,25 @@ pnpm --filter @deepseek-ai/dshd run build
 
 `scripts/pack-sidecar.mjs` steps: `deploy`, `runtime`, `check`, `embed` (after `tauri build`). Self-check requires a ready line within 15s, `GET /` 200 with `__DSH_BOOT__`, and SIGTERM exit 0, with `PATH=/usr/bin:/bin:/usr/sbin:/sbin`.
 
-A packaged macOS `.app` is typically about 450MB (Node + production deploy). Windows unpack of the Node zip is implemented in the pack script; running it is CI-only on this machine.
+These probes use `fetch` and `curl`, which decode `Transfer-Encoding: chunked` — the framing the sidecar always sends — while the shell's own health client decodes it in `http.rs`. `cargo test`, not the pack self-check, is what holds that client to real framing.
+
+A packaged macOS `.app` is typically about 320MB (Node + production deploy). Windows unpack of the Node zip is implemented in the pack script; running it is CI-only on this machine.
 
 ## Data directory and logs
 
 | | macOS | Windows |
 |---|---|---|
-| `DSH_HOME` | `~/Library/Application Support/DeepSeekHarness` | `%APPDATA%\DeepSeekHarness` |
+| `DSH_HOME` | `~/.dsh` | `~/.dsh` |
 | sidecar cwd | `desktop-state.json` → `workspace`, else `~/Documents` | same, else user home |
 | sidecar log | `$DSH_HOME/logs/sidecar.log` (rotates at 50MB) | same |
 | panic log | `$DSH_HOME/logs/crash.log` | same |
 | lock | `$DSH_HOME/desktop.lock` (`flock`) | exclusive `share_mode(0)` |
 
-First launch copies `sessions`, `settings`, `attachments`, `storages`, and `profiles` from `~/.dsh` (or `DSH_LEGACY_HOME`) when `migration-state.json` is absent. Credentials are not copied. A failure restores `migration-backup-<ts>`. `DSH_DESKTOP_MIGRATE_FAIL=1` injects that failure for tests. A second process that cannot take the lock shows “另一个 DeepSeek Harness 进程正在使用数据目录” and does not spawn.
+The data directory is the one the npm CLI uses, so sessions, settings, and workspaces are shared live with `npx @deepseek-ai/dsh web`; both may run at once, each on its own OS-assigned port. `desktop.lock` is taken by this shell only, so it excludes a second `dshd`, not a CLI server.
+
+First launch copies `sessions`, `settings`, `attachments`, `storages`, and `profiles` from the pre-unification desktop home — `~/Library/Application Support/DeepSeekHarness`, `%APPDATA%\DeepSeekHarness`, or `DSH_LEGACY_HOME` — when `migration-state.json` is absent and `~/.dsh` holds none of those directories yet, so existing CLI data is never overwritten. Credentials are not copied. A failure restores `migration-backup-<ts>`. `DSH_DESKTOP_MIGRATE_FAIL=1` injects that failure for tests. A second process that cannot take the lock shows “另一个 DeepSeek Harness 进程正在使用数据目录” and does not spawn.
+
+`sidecar.pid` records the sidecar's process id and entry script. The next boot reaps that process only when both still match, so a pid reused by a CLI `dsh web` is left alone.
 
 ## Token
 
