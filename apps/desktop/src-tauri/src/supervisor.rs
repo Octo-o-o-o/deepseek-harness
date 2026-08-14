@@ -60,6 +60,25 @@ impl SidecarSupervisor {
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::SeqCst)
     }
+
+    /// Whether a stop is in flight or done.
+    ///
+    /// # Returns
+    /// `true` once [`SidecarSupervisor::request_stop`] has been called.
+    pub fn is_stopping(&self) -> bool {
+        self.stopping.load(Ordering::SeqCst)
+    }
+
+    /// Whether the installed sidecar has exited.
+    ///
+    /// # Returns
+    /// The exit status once the child is observed dead, `None` while it runs
+    /// or nothing is installed. Exercised by the exit watcher, not by stop
+    /// paths (they own the process and join it themselves).
+    pub fn poll_exit(&self) -> Option<std::process::ExitStatus> {
+        let mut guard = self.sidecar.lock().ok()?;
+        guard.as_mut()?.try_wait()
+    }
 }
 
 #[cfg(test)]
