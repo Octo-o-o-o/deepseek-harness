@@ -74,6 +74,8 @@ interface BenchOptions {
   promptError?: ConversationSnapshot['promptError']
   /** Authoritative queue rows served to the machine overlay (empty = none). */
   queue?: ConversationSnapshot['queue']
+  /** Conversation nodes the prompt-recall walk reads. */
+  nodes?: ConversationSnapshot['nodes']
   /** The hub's steer-all face (empty-draft accelerated Enter). */
   steerQueue?: () => void
   variant?: 'hero' | 'composer'
@@ -109,6 +111,7 @@ function bench(over?: BenchOptions) {
     removed: over?.disabled ?? false,
     promptError: over?.promptError ?? null,
     queue: over?.queue ?? [],
+    nodes: over?.nodes ?? [],
   }))
   type ShellDeps = ConstructorParameters<typeof SessionInputShell>[0]
   const shell = new SessionInputShell({
@@ -1322,5 +1325,119 @@ describe('command launcher chrome and control seats', () => {
     cleanup()
     const live = bench({ running: true, permissions })
     expect((live.view.getByLabelText(/^访问模式/) as HTMLButtonElement).disabled).toBe(false)
+  })
+})
+
+describe('prompt recall', () => {
+  function userNode(text: string, seq: number): ConversationSnapshot['nodes'][number] {
+    return { kind: 'user', seq, time: 0, content: [{ type: 'text', text }], source: null }
+  }
+
+  const nodes = [userNode('first ask', 1), userNode('second ask', 2)]
+
+  function caretAt(textarea: HTMLTextAreaElement, at: number): void {
+    textarea.setSelectionRange(at, at)
+  }
+
+  it('ArrowUp at the start of an empty draft recalls the newest prompt, then older ones', () => {
+    const { textarea } = bench({ nodes })
+    act(() => { fireEvent.keyDown(textarea, { key: 'ArrowUp' }) })
+    expect(textarea.value).toBe('second ask')
+    act(() => { fireEvent.keyDown(textarea, { key: 'ArrowUp' }) })
+    expect(textarea.value).toBe('first ask')
+  })
+
+  it('keeps walking once recall began, even though the caret now sits at the end', () => {
+    const { textarea } = bench({ nodes })
+    act(() => { fireEvent.keyDown(textarea, { key: 'ArrowUp' }) })
+    caretAt(textarea, textarea.value.length)
+    act(() => { fireEvent.keyDown(textarea, { key: 'ArrowUp' }) })
+    expect(textarea.value).toBe('first ask')
+  })
+
+  it('holds at the oldest prompt instead of wrapping', () => {
+    const { textarea } = bench({ nodes })
+    act(() => { fireEvent.keyDown(textarea, { key: 'ArrowUp' }) })
+    act(() => { fireEvent.keyDown(textarea, { key: 'ArrowUp' }) })
+    act(() => { fireEvent.keyDown(textarea, { key: 'ArrowUp' }) })
+    expect(textarea.value).toBe('first ask')
+  })
+
+  it('ArrowDown walks back toward the newest prompt and restores the stashed draft', () => {
+    const { textarea } = bench({ nodes, draft: 'half typed' })
+    caretAt(textarea, 0)
+    act(() => { fireEvent.keyDown(textarea, { key: 'ArrowUp' }) })
+    act(() => { fireEvent.keyDown(textarea, { key: 'ArrowUp' }) })
+    expect(textarea.value).toBe('first ask')
+    act(() => { fireEvent.keyDown(textarea, { key: 'ArrowDown' }) })
+    expect(textarea.value).toBe('second ask')
+    act(() => { fireEvent.keyDown(textarea, { key: 'ArrowDown' }) })
+    expect(textarea.value).toBe('half typed')
+  })
+
+  it('leaves the caret alone mid-draft and with a selection', () => {
+    const { textarea } = bench({ nodes, draft: 'line one\nline two' })
+    caretAt(textarea, 12)
+    act(() => { fireEvent.keyDown(textarea, { key: 'ArrowUp' }) })
+    expect(textarea.value).toBe('line one\nline two')
+    textarea.setSelectionRange(0, 4)
+    act(() => { fireEvent.keyDown(textarea, { key: 'ArrowUp' }) })
+    expect(textarea.value).toBe('line one\nline two')
+  })
+
+  it('does nothing in a session with no prompts yet', () => {
+    const { textarea } = bench({ draft: '' })
+    act(() => { fireEvent.keyDown(textarea, { key: 'ArrowUp' }) })
+    expect(textarea.value).toBe('')
+  })
+
+  it('editing ends the walk, so the next ArrowUp starts from the newest prompt again', () => {
+    const { textarea } = bench({ nodes })
+    act(() => { fireEvent.keyDown(textarea, { key: 'ArrowUp' }) })
+    act(() => { fireEvent.keyDown(textarea, { key: 'ArrowUp' }) })
+    expect(textarea.value).toBe('first ask')
+    act(() => { fireEvent.change(textarea, { target: { value: 'mine' } }) })
+    caretAt(textarea, 0)
+    act(() => { fireEvent.keyDown(textarea, { key: 'ArrowUp' }) })
+    expect(textarea.value).toBe('second ask')
+  })
+
+  it('sending ends the walk', () => {
+    const { textarea, sink } = bench({ nodes })
+    act(() => { fireEvent.keyDown(textarea, { key: 'ArrowUp' }) })
+    act(() => { fireEvent.keyDown(textarea, { key: 'Enter' }) })
+    expect(sink).toHaveBeenCalledWith('second ask', [], 'queue')
+    caretAt(textarea, 0)
+    act(() => { fireEvent.keyDown(textarea, { key: 'ArrowUp' }) })
+    expect(textarea.value).toBe('second ask')
+  })
+
+  it('an IME composition arrow never recalls', () => {
+    const { textarea } = bench({ nodes })
+    fireEvent.compositionStart(textarea)
+    act(() => { fireEvent.keyDown(textarea, { key: 'ArrowUp' }) })
+    expect(textarea.value).toBe('')
+  })
+
+  it('a read-only composer does not recall', () => {
+    const { textarea } = bench({ nodes, disabled: true })
+    act(() => { fireEvent.keyDown(textarea, { key: 'ArrowUp' }) })
+    expect(textarea.value).toBe('')
+  })
+
+  it('the pending lock owns the draft, so an in-flight submission does not recall', () => {
+    const { textarea, shell } = bench({ nodes })
+    act(() => {
+      shell.setDraft('/goal ')
+      shell.beginCommand(
+        { token: '/goal ', submit: () => new Promise<never>(() => {}) }, // never settles: stays submitting
+        { start: 0, end: 6, draftRev: shell.snapshot.draftRev },
+      )
+      shell.submit()
+    })
+    expect(shell.snapshot.phase).toBe('submitting')
+    textarea.setSelectionRange(0, 0)
+    act(() => { fireEvent.keyDown(textarea, { key: 'ArrowUp' }) })
+    expect(textarea.value).toBe('/goal ')
   })
 })
