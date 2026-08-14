@@ -101,7 +101,7 @@ pub fn try_lock_home(home: &Path) -> Result<HomeLock, LockError> {
                 LockError::Io(error)
             });
         }
-        return Ok(HomeLock { _file: file });
+        Ok(HomeLock { _file: file })
     }
     #[cfg(not(windows))]
     {
