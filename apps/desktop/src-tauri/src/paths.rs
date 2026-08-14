@@ -46,6 +46,8 @@ fn platform_dsh_home() -> PathBuf {
 ///
 /// Stage D owns persistence of that file. Stage A uses the same default so the
 /// agent never treats the application install directory as a workspace.
+/// A recorded workspace that no longer exists falls back to `~/Documents`:
+/// spawning into a deleted directory would fail the whole boot.
 ///
 /// # Parameters
 /// - `home`: desktop `DSH_HOME`.
@@ -63,11 +65,18 @@ pub fn default_workspace_cwd(home: &Path) -> PathBuf {
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
             if let Some(workspace) = value.get("workspace").and_then(|item| item.as_str()) {
                 if !workspace.is_empty() {
-                    return PathBuf::from(workspace);
+                    let recorded = PathBuf::from(workspace);
+                    if recorded.is_dir() {
+                        return recorded;
+                    }
                 }
             }
         }
     }
+    fallback_workspace()
+}
+
+fn fallback_workspace() -> PathBuf {
     let documents = home_dir().join("Documents");
     if documents.is_dir() {
         documents
@@ -77,14 +86,19 @@ pub fn default_workspace_cwd(home: &Path) -> PathBuf {
 }
 
 /// Persist the sidecar workspace when `desktop-state.json` is missing.
+/// A `DSH_WORKSPACE` override is never persisted: the debug knob must not
+/// become the permanent workspace of later launches.
 ///
 /// # Parameters
 /// - `home`: desktop `DSH_HOME`.
 /// - `workspace`: directory chosen as the sidecar cwd.
 ///
 /// # Returns
-/// `Ok(())` after writing or when the file already exists.
+/// `Ok(())` after writing or when the file already exists or is overridden.
 pub fn ensure_desktop_state(home: &Path, workspace: &Path) -> std::io::Result<()> {
+    if env::var("DSH_WORKSPACE").is_ok_and(|value| !value.is_empty()) {
+        return Ok(());
+    }
     let path = home.join("desktop-state.json");
     if path.is_file() {
         return Ok(());
@@ -271,15 +285,36 @@ mod tests {
     #[test]
     fn workspace_cwd_reads_desktop_state() {
         let home = temp_dir();
+        let workspace = home.join("ws");
+        fs::create_dir_all(&workspace).unwrap();
         fs::write(
             home.join("desktop-state.json"),
-            r#"{"workspace":"/tmp/dsh-workspace"}"#,
+            format!(
+                r#"{{"workspace":{}}}"#,
+                serde_json::to_string(&workspace.to_string_lossy()).unwrap()
+            ),
         )
         .unwrap();
-        assert_eq!(
-            default_workspace_cwd(&home),
-            PathBuf::from("/tmp/dsh-workspace")
+        assert_eq!(default_workspace_cwd(&home), workspace);
+        let _ = fs::remove_dir_all(home);
+    }
+
+    /// A recorded workspace that was deleted must not fail the boot: the
+    /// fallback keeps spawning possible.
+    #[test]
+    fn workspace_cwd_falls_back_when_recorded_dir_is_gone() {
+        let home = temp_dir();
+        fs::write(
+            home.join("desktop-state.json"),
+            r#"{"workspace":"/tmp/dsh-definitely-missing-workspace"}"#,
+        )
+        .unwrap();
+        let resolved = default_workspace_cwd(&home);
+        assert_ne!(
+            resolved,
+            PathBuf::from("/tmp/dsh-definitely-missing-workspace")
         );
+        assert!(resolved.is_dir());
         let _ = fs::remove_dir_all(home);
     }
 

@@ -50,7 +50,9 @@ use crate::sidecar::{desktop_web_args, spawn_sidecar, wait_ready, SidecarSpec};
 use crate::state::{transition, BootEvent, BootPhase};
 use crate::supervisor::SidecarSupervisor;
 use crate::token::generate_desktop_token;
-use crate::tray::{install_tray, show_main};
+use crate::tray::install_tray;
+#[cfg(target_os = "macos")]
+use crate::tray::show_main;
 
 /// Shared runtime state held by the Tauri app.
 pub struct AppState {
@@ -106,12 +108,15 @@ pub fn run() {
             let window = build_main_window(app.handle())?;
             let handle = app.handle().clone();
             let boot = thread::spawn(move || {
-                let state = handle.state::<AppState>();
                 let exe = std::env::current_exe().unwrap_or_else(|_| Path::new(".").to_path_buf());
                 let cwd = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
-                if let Err(message) = boot_and_navigate(&window, &state, &exe, &cwd) {
-                    state.request_stop();
-                    show_error(&window, &message);
+                let splash = splash_url(&window);
+                if let Err(message) =
+                    boot_and_navigate(&handle, &window, &exe, &cwd, splash.as_ref())
+                {
+                    eprintln!("desktop: boot failed: {message}");
+                    handle.state::<AppState>().request_stop();
+                    show_error(&window, splash.as_ref(), &message);
                 }
             });
             if let Some(state) = app.try_state::<AppState>() {
@@ -192,17 +197,18 @@ fn build_main_window(app: &AppHandle) -> tauri::Result<tauri::WebviewWindow> {
 }
 
 fn boot_and_navigate(
+    handle: &tauri::AppHandle,
     window: &tauri::WebviewWindow,
-    state: &AppState,
     exe: &Path,
     cwd: &Path,
+    splash: Option<&tauri::Url>,
 ) -> Result<(), String> {
+    let state = handle.state::<AppState>();
     let node = resolve_node(exe).map_err(|err| err.to_string())?;
     let bin = resolve_web_bin(exe, cwd).map_err(|err| err.to_string())?;
     let home = default_dsh_home();
     std::fs::create_dir_all(home.join("logs")).map_err(|err| err.to_string())?;
     install_panic_hook(home.clone());
-    rotate_sidecar_log(&home.join("logs/sidecar.log")).map_err(|err| err.to_string())?;
     let held = try_lock_home(&home).map_err(|err| err.to_string())?;
     {
         let mut guard = state._lock.lock().map_err(|err| err.to_string())?;
@@ -212,11 +218,14 @@ fn boot_and_navigate(
         let mut guard = state.home.lock().map_err(|err| err.to_string())?;
         *guard = Some(home.clone());
     }
+    // Rotate only after the lock is held: a second instance must not rotate
+    // the first instance's live log before it is turned away.
+    rotate_sidecar_log(&home.join("logs/sidecar.log")).map_err(|err| err.to_string())?;
     reap_stale_sidecar(&home);
     let report = migrate_legacy_home(&default_legacy_home(), &home, inject_fault_from_env())
         .map_err(|err| err.to_string())?;
     if report.migrated {
-        show_migration(window, &report);
+        show_migration(window, splash, &report);
     }
     let workspace = default_workspace_cwd(&home);
     ensure_desktop_state(&home, &workspace).map_err(|err| err.to_string())?;
@@ -251,7 +260,7 @@ fn boot_and_navigate(
     let spawned = spawn_sidecar(&spec).map_err(|err| err.to_string())?;
     phase = transition(phase, BootEvent::SpawnOk);
     let (process, ready) = spawned.into_parts();
-    write_sidecar_pid(&home, process.pid(), &bin);
+    write_sidecar_pid(&home, process.pid(), &bin, process.start_token());
     state.supervisor.install(process);
     if state.supervisor.is_cancelled() {
         state.request_stop();
@@ -301,6 +310,10 @@ fn boot_and_navigate(
         state.request_stop();
         return Err(err);
     }
+    if inject_boot_fault("client-ready") {
+        state.request_stop();
+        return Err("injected fault: desktop client ready wait".into());
+    }
     if let Err(err) = wait_desktop_client_ready(port, &nonce, READY_TIMEOUT) {
         state.request_stop();
         let _ = transition(
@@ -327,9 +340,22 @@ fn open_log_directory() -> Result<(), String> {
     open_logs_dir(&default_dsh_home()).map_err(|err| err.to_string())
 }
 
-fn show_migration(window: &tauri::WebviewWindow, report: &MigrationReport) {
+/// Test injection point named by `DSH_DESKTOP_BOOT_FAIL`: `client-ready`
+/// fails right after the WebView navigated to the sidecar, exercising the
+/// navigate-back-to-splash error path.
+fn inject_boot_fault(point: &str) -> bool {
+    std::env::var("DSH_DESKTOP_BOOT_FAIL").ok().as_deref() == Some(point)
+}
+
+fn show_migration(
+    window: &tauri::WebviewWindow,
+    splash: Option<&tauri::Url>,
+    report: &MigrationReport,
+) {
     let summary = format!(
-        "Copied {}.\nSkipped credentials.\nBackup: {}",
+        "Copied {}.
+Skipped credentials.
+Backup: {}",
         if report.copied.is_empty() {
             "(nothing)".into()
         } else {
@@ -341,27 +367,67 @@ fn show_migration(window: &tauri::WebviewWindow, report: &MigrationReport) {
             .map(|path| path.display().to_string())
             .unwrap_or_else(|| "(none)".into()),
     );
-    let encoded = serde_json::to_string(&summary).unwrap_or_else(|_| "\"migrated\"".into());
-    let script =
-        format!("window.__DSH_SHOW_MIGRATION__ && window.__DSH_SHOW_MIGRATION__({encoded})");
-    let _ = window.eval(&script);
+    show_on_splash(window, splash, "window.__DSH_SHOW_MIGRATION__", &summary);
 }
 
-fn show_error(window: &tauri::WebviewWindow, message: &str) {
-    // The window may be on the sidecar's origin, which has no error page and is
-    // in any case the thing that just failed. The bundled start page owns the
-    // message and the button that opens the log directory.
-    if window.url().is_ok_and(|url| url.scheme() == "http") {
-        if let Ok(start) = tauri::Url::parse("tauri://localhost/") {
-            let _ = window.navigate(start);
-            thread::sleep(Duration::from_millis(300));
+fn show_error(window: &tauri::WebviewWindow, splash: Option<&tauri::Url>, message: &str) {
+    show_on_splash(window, splash, "window.__DSH_SHOW_ERROR__", message);
+}
+
+/// Resource URL of the bundled start page, polled until the WebView stops
+/// serving `about:blank`. Captured rather than hardcoded because the asset
+/// scheme differs per platform (`tauri://localhost` vs `http://tauri.localhost`).
+fn splash_url(window: &tauri::WebviewWindow) -> Option<tauri::Url> {
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Ok(url) = window.url() {
+            let text = url.as_str();
+            if !text.is_empty() && !text.starts_with("about:") && text != "null" {
+                return Some(url);
+            }
+        }
+        if std::time::Instant::now() >= deadline {
+            return None;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// Surface `message` through a start-page hook.
+///
+/// The hooks exist only on the bundled start page, so navigate back to it when
+/// the WebView sits on the (possibly dead) sidecar origin, and keep retrying
+/// the eval for a bounded window: a fast failure can race the start page's own
+/// script load, and repeated idempotent evals are harmless. The error page is
+/// also the one surface that must never stay hidden: the window is shown and
+/// focused before the message lands.
+fn show_on_splash(
+    window: &tauri::WebviewWindow,
+    splash: Option<&tauri::Url>,
+    hook: &str,
+    message: &str,
+) {
+    if let Some(splash) = splash {
+        let on_splash = window.url().is_ok_and(|current| current == *splash);
+        if !on_splash && window.navigate(splash.clone()).is_ok() {
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while std::time::Instant::now() < deadline {
+                if window.url().is_ok_and(|current| current == *splash) {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
         }
     }
     let _ = window.show();
     let _ = window.set_focus();
-    let encoded = serde_json::to_string(message).unwrap_or_else(|_| "\"boot failed\"".into());
-    let script = format!("window.__DSH_SHOW_ERROR__ && window.__DSH_SHOW_ERROR__({encoded})");
-    let _ = window.eval(&script);
+    let encoded = serde_json::to_string(message).unwrap_or_else(|_| "\"(boot failed)\"".into());
+    let script = format!("{hook} && {hook}({encoded})");
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while std::time::Instant::now() < deadline {
+        let _ = window.eval(&script);
+        thread::sleep(Duration::from_millis(250));
+    }
 }
 
 /// Whether `url` is served by the sidecar this launch spawned.

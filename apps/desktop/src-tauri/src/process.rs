@@ -1,6 +1,35 @@
-//! Process-tree termination. Unix uses a process group; Windows is a stub.
+//! Child-console suppression and process-tree termination. Unix escalation
+//! probes process-group liveness; Windows relies on the Job Object assigned at
+//! spawn (direct-child fallback when the job could not be created).
 
+use std::process::Command;
 use std::time::{Duration, Instant};
+
+/// Process-creation flag `CREATE_NO_WINDOW` from `CreateProcessW`.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// Suppress the console window a Windows child would otherwise allocate.
+///
+/// The release shell runs under the GUI subsystem, so a console-subsystem
+/// child (`node.exe`, `taskkill.exe`) spawned without this flag receives a
+/// fresh visible console. The sidecar's own children inherit its windowless
+/// console (`dsh-subprocess-local` never sets `detached` on Windows), so one
+/// flag at the sidecar spawn covers the whole tree. No-op on other platforms.
+///
+/// # Parameters
+/// - `command`: builder for the child about to spawn.
+pub fn hide_child_console(command: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = command;
+    }
+}
 
 /// Operations the shutdown sequence needs from a live child tree.
 pub trait ProcessTree {
@@ -209,5 +238,77 @@ mod tests {
         assert_eq!(tree.terminate.get(), 1);
         assert_eq!(tree.kill.get(), 1);
         assert!(!tree.alive.get());
+    }
+
+    /// `CREATE_NO_WINDOW` must stay a valid creation flag: an invalid value
+    /// fails every Windows child spawn.
+    #[cfg(windows)]
+    #[test]
+    fn hidden_console_children_still_spawn() {
+        let mut command = Command::new("cmd");
+        hide_child_console(&mut command);
+        command.args(["/C", "exit 42"]);
+        assert_eq!(command.status().unwrap().code(), Some(42));
+    }
+
+    /// taskkill runs unchanged under `CREATE_NO_WINDOW`: the reaping path must
+    /// still terminate the recorded pid.
+    #[cfg(windows)]
+    #[test]
+    fn hidden_console_taskkill_still_kills() {
+        let mut victim = Command::new("ping")
+            .args(["-n", "30", "127.0.0.1"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let mut command = Command::new("taskkill");
+        command.args(["/PID", &victim.id().to_string(), "/T", "/F"]);
+        hide_child_console(&mut command);
+        let status = command.status().unwrap();
+        assert!(status.success(), "taskkill failed: {status}");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while victim.try_wait().unwrap().is_none() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert!(
+            victim.try_wait().unwrap().is_some(),
+            "hidden taskkill did not kill the pid"
+        );
+    }
+
+    /// A TERM-trapping grandchild survives the leader: escalation must fire
+    /// on group liveness, and the group must be gone afterwards. Mirrors the
+    /// TERM-trapping case in `dsh-subprocess-local`.
+    #[cfg(unix)]
+    #[test]
+    fn escalates_and_kills_a_term_trapping_group() {
+        use std::os::unix::process::CommandExt;
+        let mut child = Command::new("sh")
+            .arg("-c")
+            .arg("trap '' TERM; sleep 30 & wait")
+            .process_group(0)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let pgid = child.id() as i32;
+        let mut tree = ChildTree { child: &mut child };
+        let started = Instant::now();
+        shutdown_tree(
+            &mut tree,
+            Duration::from_millis(300),
+            Instant::now,
+            std::thread::sleep,
+        );
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < Duration::from_secs(3),
+            "shutdown took {elapsed:?}, expected a fast group escalation"
+        );
+        assert!(
+            !process_group_has_members(pgid),
+            "TERM-trapping group survived the forced kill"
+        );
     }
 }

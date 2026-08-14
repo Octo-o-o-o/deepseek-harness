@@ -28,8 +28,11 @@ export const BOOTSTRAP_STATUS_HEADER = 'x-dsh-bootstrap'
 /** Owner id the connection plugin writes on `/api` registrations. */
 export const CONNECTION_ROUTE_OWNER = 'client-connection'
 
-/** Single-use nonce lifetime. */
-export const BOOTSTRAP_TTL_MS = 30_000
+/** Single-use nonce lifetime. Spans the desktop shell's whole boot budget —
+ * sidecar cold start (first launch can exceed 15s under real-time AV scans),
+ * health checks, WebView navigation, and the page's first parse — so it is
+ * minutes, not seconds; single-use keeps the longer window cheap. */
+export const BOOTSTRAP_TTL_MS = 120_000
 
 /** Why {@link DesktopBootstrap.consume} refused a nonce. */
 export type ConsumeFailure = 'invalid' | 'expired' | 'used'

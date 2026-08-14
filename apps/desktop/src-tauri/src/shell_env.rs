@@ -12,18 +12,23 @@
 //! `.zshrc` for an unrelated service stays out of the agent's environment.
 
 use std::collections::BTreeMap;
+#[cfg(unix)]
 use std::process::{Command, Stdio};
+#[cfg(unix)]
 use std::time::{Duration, Instant};
 
 /// How long the login shell may take before the launch environment is kept.
+#[cfg(unix)]
 pub const RESOLVE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Marker printed around the environment dump so shell profile output that
 /// writes to stdout cannot be read as an environment entry.
+#[cfg(unix)]
 const MARK: &str = "__DSH_ENV__";
 
 /// Environment variable set for the child so a profile can detect this probe
 /// and skip work meant for an interactive session.
+#[cfg(unix)]
 const PROBE_MARKER: &str = "DSH_RESOLVING_ENVIRONMENT";
 
 /// Environment variable that turns the probe off.
@@ -48,6 +53,7 @@ pub fn probe_enabled(disable: Option<&str>) -> bool {
 ///
 /// # Returns
 /// Arguments after the shell program.
+#[cfg(unix)]
 pub fn login_shell_args() -> Vec<String> {
     vec![
         "-ilc".to_string(),
@@ -62,6 +68,7 @@ pub fn login_shell_args() -> Vec<String> {
 ///
 /// # Returns
 /// The exported pairs, or an empty map when the block is absent or unterminated.
+#[cfg(unix)]
 pub fn parse_env_block(stdout: &[u8]) -> BTreeMap<String, String> {
     let text = String::from_utf8_lossy(stdout);
     let mut parts = text.split(MARK);
@@ -96,6 +103,7 @@ pub fn parse_env_block(stdout: &[u8]) -> BTreeMap<String, String> {
 ///
 /// # Returns
 /// The exported pairs the shell reported.
+#[cfg(unix)]
 pub fn resolve_login_shell_env(shell: &str) -> BTreeMap<String, String> {
     let spawned = Command::new(shell)
         .args(login_shell_args())
@@ -156,10 +164,12 @@ pub fn login_shell_env() -> BTreeMap<String, String> {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
     fn block(body: &str) -> Vec<u8> {
         format!("profile noise\n{MARK}{body}{MARK}").into_bytes()
     }
 
+    #[cfg(unix)]
     #[test]
     fn reads_pairs_between_the_markers() {
         let parsed = parse_env_block(&block(
@@ -172,18 +182,21 @@ mod tests {
         assert_eq!(parsed.get("LANG").map(String::as_str), Some("en_US.UTF-8"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn keeps_values_that_contain_separators() {
         let parsed = parse_env_block(&block("SCRIPT=a=b\nc\0"));
         assert_eq!(parsed.get("SCRIPT").map(String::as_str), Some("a=b\nc"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn profile_output_outside_the_markers_is_not_an_entry() {
         let parsed = parse_env_block(&block("PATH=/usr/bin\0"));
         assert_eq!(parsed.len(), 1);
     }
 
+    #[cfg(unix)]
     #[test]
     fn an_unterminated_block_yields_nothing() {
         assert!(parse_env_block(format!("{MARK}PATH=/usr/bin\0").as_bytes()).is_empty());
@@ -198,6 +211,7 @@ mod tests {
         assert!(!probe_enabled(Some("false")));
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_missing_shell_yields_nothing() {
         assert!(resolve_login_shell_env("/nonexistent/shell/for/tests").is_empty());

@@ -83,13 +83,13 @@ A packaged macOS `.app` is typically about 320MB (Node + production deploy). Win
 | sidecar cwd | `desktop-state.json` → `workspace`, else `~/Documents` | same, else user home |
 | sidecar log | `$DSH_HOME/logs/sidecar.log` (rotates at 50MB) | same |
 | panic log | `$DSH_HOME/logs/crash.log` | same |
-| lock | `$DSH_HOME/desktop.lock` (`flock`) | exclusive `share_mode(0)` |
+| lock | `$DSH_HOME/desktop.lock` (`flock`) | same file, `LockFileEx` byte-range lock |
 
 The data directory is the one the npm CLI uses, so sessions, settings, and workspaces are shared live with `npx @deepseek-ai/dsh web`; both may run at once, each on its own OS-assigned port. `desktop.lock` is taken by this shell only, so it excludes a second `dshd`, not a CLI server.
 
-First launch copies `sessions`, `settings`, `attachments`, `storages`, and `profiles` from the pre-unification desktop home — `~/Library/Application Support/DeepSeekHarness`, `%APPDATA%\DeepSeekHarness`, or `DSH_LEGACY_HOME` — when `migration-state.json` is absent and `~/.dsh` holds none of those directories yet, so existing CLI data is never overwritten. Credentials are not copied. A failure restores `migration-backup-<ts>`. `DSH_DESKTOP_MIGRATE_FAIL=1` injects that failure for tests. A second process that cannot take the lock shows “another dshd instance is using the data directory” and does not spawn.
+First launch copies `sessions`, `settings`, `attachments`, `storages`, and `profiles` from the pre-unification desktop home — `~/Library/Application Support/DeepSeekHarness`, `%APPDATA%\DeepSeekHarness`, or `DSH_LEGACY_HOME` — when `migration-state.json` is absent and `~/.dsh` holds none of those directories yet, so existing CLI data is never overwritten. Credentials are not copied. A failure restores `migration-backup-<ts>`. `DSH_DESKTOP_MIGRATE_FAIL=1` injects that failure for tests, and `DSH_DESKTOP_BOOT_FAIL=client-ready` injects a post-navigation boot failure the same way. A second process that cannot take the lock shows “another dshd instance is using the data directory” and does not spawn.
 
-`sidecar.pid` records the sidecar's process id and entry script. The next boot reaps that process only when both still match, so a pid reused by a CLI `dsh web` is left alone.
+`sidecar.pid` records the sidecar's process id, entry script, and (Windows) process creation time. The next boot reaps that process only when the recorded identity still matches — entry script via `ps` on Unix, creation time on Windows — so a pid reused by a CLI `dsh web` or by an unrelated process is left alone; an unverifiable record is discarded without a kill. Shutdown escalates on process-group liveness on Unix (TERM, then KILL to the whole group) and terminates the Job Object on Windows; after a successful boot the shell watches the sidecar and surfaces an unexpected exit on the splash page.
 
 ## Environment
 
@@ -110,7 +110,7 @@ The shell always generates a per-launch hex token and a bootstrap nonce and inje
 ## Known limits
 
 - Apple Silicon only. The bundle and its Node runtime are `arm64`, and `minimumSystemVersion` is the runtime's own floor, macOS 13.5; an Intel Mac runs `npx @deepseek-ai/dsh` instead. Building an `x86_64` payload additionally requires `pruneNonHostArtifacts` to stop deleting `node-pty/prebuilds/darwin-x64` and a terminal check on a real x64 host.
-- Windows process-tree kill (Job Object) and `share_mode(0)` lock are compiled but **not locally verified**. `rustup target add x86_64-pc-windows-msvc` failed in this environment (rustup cache). CI owns the Windows run.
+- Windows shutdown terminates the Job Object immediately — no drain window; Unix drains for 5s before the forced group kill. Sessions are transactionally logged, so either path is crash-safe.
 - Windows sandbox remains partial, same as the CLI.
 - WebView2 presence detection / installer prompt is not wired.
 - Only macOS has a signed release path. The `build` script and both CI platform artifacts stay unsigned, and Windows and Linux installer formats and their signing remain release work.

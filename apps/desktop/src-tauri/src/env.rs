@@ -19,6 +19,10 @@ use std::process::Command;
 /// `git push` over SSH work, `SHELL` / `USER` / `LOGNAME` are the identity facts
 /// command-line tools read, and the certificate variables are how a network with
 /// its own certificate authority is trusted by both Node and the tools it runs.
+/// The Windows layout and tooling names (`APPDATA`, `COMSPEC`, `PATHEXT`,
+/// `ProgramFiles`, …) are the same story on that platform: pwsh resolves its
+/// modules through `ProgramFiles`, cmd finds executables through `PATHEXT`,
+/// and npm writes into `APPDATA`.
 pub const INHERITED_ENV: &[&str] = &[
     "HOME",
     "USERPROFILE",
@@ -29,11 +33,29 @@ pub const INHERITED_ENV: &[&str] = &[
     "LANG",
     "LC_ALL",
     "LC_CTYPE",
+    "TZ",
+    "TERM",
     "TMPDIR",
     "TEMP",
     "TMP",
     "SystemRoot",
     "SystemDrive",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "PROGRAMDATA",
+    "PROGRAMFILES",
+    "ProgramFiles(x86)",
+    "ProgramW6432",
+    "PUBLIC",
+    "COMSPEC",
+    "PATHEXT",
+    "OS",
+    "USERNAME",
+    "USERDOMAIN",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "PROCESSOR_ARCHITECTURE",
+    "NUMBER_OF_PROCESSORS",
     "SSH_AUTH_SOCK",
     "DEEPSEEK_API_KEY",
     "DEEPSEEK_BASE_URL",

@@ -5,6 +5,41 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>dshd</title>
     <link rel="stylesheet" href="./styles.css" />
+    <script>
+      // Defined in <head> so shell-side evals cannot race the definitions.
+      window.__DSH_SHOW_ERROR__ = (message) => {
+        const stage = document.getElementById('stage')
+        const status = document.getElementById('status')
+        const detail = document.getElementById('detail')
+        const openLogs = document.getElementById('open-logs')
+        if (!stage || !status || !detail || !openLogs) return
+        stage.dataset.state = 'error'
+        status.textContent = 'The local host did not become ready.'
+        detail.hidden = false
+        detail.textContent = String(message)
+        openLogs.hidden = false
+      }
+
+      window.__DSH_SHOW_MIGRATION__ = (message) => {
+        const stage = document.getElementById('stage')
+        const status = document.getElementById('status')
+        const detail = document.getElementById('detail')
+        if (!stage || !status || !detail) return
+        stage.dataset.state = 'migration'
+        status.textContent = 'Imported existing CLI data into the desktop home.'
+        detail.hidden = false
+        detail.textContent = String(message)
+      }
+
+      window.addEventListener('DOMContentLoaded', () => {
+        const openLogs = document.getElementById('open-logs')
+        openLogs.addEventListener('click', () => {
+          const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke
+          if (invoke) invoke('open_log_directory')
+          if (window.__DSH_OPEN_LOGS__) window.__DSH_OPEN_LOGS__()
+        })
+      })
+    </script>
   </head>
   <body>
     <main id="stage" data-state="loading">
@@ -17,32 +52,5 @@
       <p id="detail" hidden></p>
       <button id="open-logs" type="button" hidden>Open log directory</button>
     </main>
-    <script>
-      const stage = document.getElementById('stage')
-      const status = document.getElementById('status')
-      const detail = document.getElementById('detail')
-      const openLogs = document.getElementById('open-logs')
-
-      window.__DSH_SHOW_ERROR__ = (message) => {
-        stage.dataset.state = 'error'
-        status.textContent = 'The local host did not become ready.'
-        detail.hidden = false
-        detail.textContent = String(message)
-        openLogs.hidden = false
-      }
-
-      window.__DSH_SHOW_MIGRATION__ = (message) => {
-        stage.dataset.state = 'migration'
-        status.textContent = 'Imported existing CLI data into the desktop home.'
-        detail.hidden = false
-        detail.textContent = String(message)
-      }
-
-      openLogs.addEventListener('click', () => {
-        const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke
-        if (invoke) invoke('open_log_directory')
-        if (window.__DSH_OPEN_LOGS__) window.__DSH_OPEN_LOGS__()
-      })
-    </script>
   </body>
 </html>
