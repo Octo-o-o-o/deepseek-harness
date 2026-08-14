@@ -83,13 +83,13 @@ spctl --assess --type execute --verbose=4 "/Volumes/dshd/dshd.app"
 | sidecar cwd | `desktop-state.json` → `workspace`，否则 `~/Documents` | 同上，否则用户主目录 |
 | sidecar 日志 | `$DSH_HOME/logs/sidecar.log`（50MB 轮转） | 同上 |
 | panic 日志 | `$DSH_HOME/logs/crash.log` | 同上 |
-| 锁 | `$DSH_HOME/desktop.lock`（`flock`） | 排他 `share_mode(0)` |
+| 锁 | `$DSH_HOME/desktop.lock`（`flock`） | 同一文件，`LockFileEx` 字节范围锁 |
 
 数据目录就是 npm 版 CLI 使用的那一个，因此会话、设置与工作区与 `npx @deepseek-ai/dsh web` 实时共享；两者可同时运行，各自使用系统分配的端口。`desktop.lock` 仅由本壳持有，因此它排斥第二个 `dshd`，而不排斥 CLI 服务。
 
-当 `migration-state.json` 不存在、且 `~/.dsh` 尚未持有这些目录时，首启会从统一前的桌面目录——`~/Library/Application Support/DeepSeekHarness`、`%APPDATA%\DeepSeekHarness` 或 `DSH_LEGACY_HOME`——复制 `sessions`、`settings`、`attachments`、`storages`、`profiles`，因此已有的 CLI 数据绝不会被覆盖。凭据不复制。失败会恢复 `migration-backup-<ts>`。`DSH_DESKTOP_MIGRATE_FAIL=1` 为测试注入该失败。拿不到锁的第二个进程显示"另一个 DeepSeek Harness 进程正在使用数据目录"，并且不拉起 sidecar。
+当 `migration-state.json` 不存在、且 `~/.dsh` 尚未持有这些目录时，首启会从统一前的桌面目录——`~/Library/Application Support/DeepSeekHarness`、`%APPDATA%\DeepSeekHarness` 或 `DSH_LEGACY_HOME`——复制 `sessions`、`settings`、`attachments`、`storages`、`profiles`，因此已有的 CLI 数据绝不会被覆盖。凭据不复制。失败会恢复 `migration-backup-<ts>`。`DSH_DESKTOP_MIGRATE_FAIL=1` 为测试注入该失败，`DSH_DESKTOP_BOOT_FAIL=client-ready` 以同样方式注入导航后的启动失败。拿不到锁的第二个进程显示"另一个 DeepSeek Harness 进程正在使用数据目录"，并且不拉起 sidecar。
 
-`sidecar.pid` 记录 sidecar 的进程号与入口脚本。下次启动只在两者仍然匹配时才回收该进程，因此被 CLI 版 `dsh web` 复用的进程号不会被误杀。
+`sidecar.pid` 记录 sidecar 的进程号、入口脚本，以及（Windows）进程创建时间。下次启动只在记录的身份仍然匹配时才回收该进程——Unix 用 `ps` 比对入口脚本，Windows 比对创建时间——因此被 CLI 版 `dsh web` 或无关进程复用的进程号不会被误杀；无法核验的记录只删文件、不杀进程。关停在 Unix 上按进程组存活升级（先 TERM、后对整组 KILL），在 Windows 上直接终止 Job Object；启动成功后壳会持续观察 sidecar，意外退出时回到 splash 页展示退出状态。
 
 ## Token
 
@@ -97,7 +97,7 @@ spctl --assess --type execute --verbose=4 "/Volumes/dshd/dshd.app"
 
 ## 已知限制
 
-- Windows 的进程树终止（Job Object）与 `share_mode(0)` 锁已编译但**未在本机验证**。本环境的 `rustup target add x86_64-pc-windows-msvc` 失败（rustup 缓存）。Windows 运行由 CI 负责。
+- Windows 关停直接终止 Job Object，没有排空窗口；Unix 有 5 秒排空后才强制杀组。会话按事务落盘，两条路径都崩溃安全。
 - Windows 沙箱仍不完整，与 CLI 相同。
 - 未接入 WebView2 存在性检测 / 安装器提示。
 - 只有 macOS 有签名发布路径。`build` 脚本与 CI 两个平台的产物仍未签名，Windows 与 Linux 的安装包格式及其签名仍属待办发布工作。
