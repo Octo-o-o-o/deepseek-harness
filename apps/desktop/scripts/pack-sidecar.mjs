@@ -108,6 +108,25 @@ function hostTriple() {
 }
 
 /**
+ * Path of a Node-installed CLI shim for the packing host.
+ *
+ * `spawn` without a shell executes a file, and on Windows the extensionless
+ * `node_modules/.bin/<name>` is a POSIX shell script it cannot run — the
+ * runnable sibling is `<name>.CMD`. Spawning the extensionless path there
+ * fails with ENOENT, which reads like a missing dependency rather than the
+ * wrong file extension.
+ * @param {string} name - bin name as it appears under node_modules/.bin.
+ * @returns {string} absolute path to the host-runnable shim.
+ */
+function nodeBin(name) {
+  const base = join(repoRoot, 'node_modules/.bin', name)
+  return process.platform === 'win32' ? `${base}.CMD` : base
+}
+
+/** `npm` itself is a shim with the same Windows rule. */
+const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+
+/**
  * Assemble the payload from the repository's official release tarballs plus
  * an offline npm install. pnpm deploy keeps vendor packages as workspace
  * symlinks and an absolute-link .pnpm zoo, both of which break inside an app
@@ -119,9 +138,8 @@ async function deployApp() {
   const packRoot = join(sidecarRoot, 'pack')
   await rm(packRoot, { recursive: true, force: true })
   const packEnv = { ...process.env, CI: 'true' }
-  const tsx = join(repoRoot, 'node_modules/.bin/tsx')
   for (const family of ['vendor', 'dsh']) {
-    await run(tsx, ['scripts/release/pack.ts', '--family', family, '--out', join(packRoot, family)], { env: packEnv })
+    await run(nodeBin('tsx'), ['scripts/release/pack.ts', '--family', family, '--out', join(packRoot, family)], { env: packEnv })
   }
   const manifests = new Map()
   const tarballBy = new Map()
@@ -165,7 +183,7 @@ async function deployApp() {
     JSON.stringify({ name: 'dshd-sidecar', version: '0.0.0', private: true, dependencies: deps }, null, 2) + '\n',
   )
   // Optional dependencies stay: koffi and the native prebuild families load from them.
-  await run('npm', ['install', '--no-audit', '--no-fund', '--package-lock=false'], { cwd: consumer, env: packEnv })
+  await run(NPM, ['install', '--no-audit', '--no-fund', '--package-lock=false'], { cwd: consumer, env: packEnv })
   const required = [
     join(consumer, 'node_modules/@deepseek-ai/dsh/lib/bin.js'),
     join(consumer, 'node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html'),
