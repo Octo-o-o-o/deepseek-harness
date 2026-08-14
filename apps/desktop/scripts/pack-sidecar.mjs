@@ -123,14 +123,39 @@ async function deployApp() {
   for (const family of ['vendor', 'dsh']) {
     await run(tsx, ['scripts/release/pack.ts', '--family', family, '--out', join(packRoot, family)], { env: packEnv })
   }
-  const deps = {}
+  const manifests = new Map()
+  const tarballBy = new Map()
   for (const family of ['vendor', 'dsh']) {
     for (const filename of await readdir(join(packRoot, family))) {
       if (!filename.endsWith('.tgz')) continue
       const tarball = join(packRoot, family, filename)
       const manifest = JSON.parse((await capture('tar', ['-xOf', tarball, 'package/package.json'])).stdout)
-      deps[manifest.name] = 'file:' + tarball
+      manifests.set(manifest.name, manifest)
+      tarballBy.set(manifest.name, tarball)
     }
+  }
+  // Install only the CLI workspace closure: the release family also packs demos,
+  // test support, and build tooling whose toolchains (typescript/vitest/rolldown)
+  // must never ship in the desktop payload.
+  const LOCAL = /^@deepseek-ai\/(dsh-|cordis|schemastery|cosmokit|node-addon-)/
+  const queue = ['@deepseek-ai/dsh']
+  const closure = new Set()
+  while (queue.length > 0) {
+    const name = queue.pop()
+    if (name === undefined || closure.has(name)) continue
+    closure.add(name)
+    const manifest = manifests.get(name)
+    if (manifest === undefined) continue
+    for (const section of ['dependencies', 'peerDependencies', 'optionalDependencies']) {
+      for (const dep of Object.keys(manifest[section] ?? {})) {
+        if (LOCAL.test(dep) && !closure.has(dep)) queue.push(dep)
+      }
+    }
+  }
+  const deps = {}
+  for (const name of closure) {
+    const tarball = tarballBy.get(name)
+    if (tarball !== undefined) deps[name] = 'file:' + tarball
   }
   const consumer = join(sidecarRoot, 'consumer')
   await rm(consumer, { recursive: true, force: true })
@@ -158,6 +183,9 @@ async function deployApp() {
   // Lay the CLI package contents at the payload root: the shell expects app/lib/bin.js.
   await cp(join(consumer, 'node_modules/@deepseek-ai/dsh'), appDir, { recursive: true })
   await stripAbsoluteSymlinks(join(appDir, 'node_modules'))
+  await pruneNonHostArtifacts(appDir)
+  await stripDevArtifacts(join(appDir, 'node_modules'))
+  await stripDevArtifacts(appDir)
   await rm(consumer, { recursive: true, force: true })
 }
 
@@ -335,6 +363,73 @@ async function embedIntoApp() {
  * dependencies are file: URLs; Gatekeeper rejects absolute symlinks inside an
  * app bundle, and dsh web never invokes npm bins, so the shims are dead weight.
  */
+/**
+ * Remove platform prebuilds and SDK natives the desktop runtime never loads.
+ * The Claude agent SDK alone carries a 256MB darwin binary through its optional
+ * platform packages, and node-pty ships prebuilds for every OS.
+ */
+async function pruneNonHostArtifacts(dir) {
+  const remove = async (rel) => {
+    const path = join(dir, rel)
+    if (await pathExists(path)) await rm(path, { recursive: true, force: true })
+  }
+  await remove('node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64')
+  await remove('node_modules/@anthropic-ai/claude-agent-sdk-darwin-x64')
+  await remove('node_modules/@anthropic-ai/claude-agent-sdk-win32-x64')
+  await remove('node_modules/@anthropic-ai/claude-agent-sdk-linux-x64')
+  await remove('node_modules/node-pty/prebuilds/darwin-x64')
+  await remove('node_modules/node-pty/prebuilds/win32-x64')
+  await remove('node_modules/node-pty/prebuilds/linux-x64')
+  console.log('pack-sidecar: pruned non-host native artifacts')
+}
+
+/**
+ * Strip sourcemaps, type declarations, and build metadata from the payload:
+ * the desktop runtime imports compiled JS only. Licenses and package.json
+ * files stay for attribution and module resolution.
+ */
+async function stripDevArtifacts(dir) {
+  let bytes = 0
+  const walk = async (current) => {
+    for (const entry of await readdir(current, { withFileTypes: true })) {
+      const path = join(current, entry.name)
+      if (entry.isDirectory()) {
+        if (entry.name === '.cache') {
+          try {
+            const size = await dirSize(path)
+            await rm(path, { recursive: true, force: true })
+            bytes += size
+          } catch { /* keep walking on unreadable caches */ }
+          continue
+        }
+        await walk(path)
+        continue
+      }
+      if (!entry.isFile()) continue
+      if (!/\.map$|\.d\.ts$|\.tsbuildinfo$/.test(entry.name)) continue
+      try {
+        bytes += (await lstat(path)).size
+        await rm(path)
+      } catch { /* keep unreadable entries */ }
+    }
+  }
+  await walk(dir)
+  if (bytes > 0) console.log('pack-sidecar: stripped ' + (bytes / 1048576).toFixed(1) + ' MB of dev artifacts')
+}
+
+/**
+ * Recursive directory byte size.
+ */
+async function dirSize(dir) {
+  let total = 0
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name)
+    if (entry.isDirectory()) total += await dirSize(path)
+    else if (entry.isFile()) total += (await lstat(path)).size
+  }
+  return total
+}
+
 async function stripAbsoluteSymlinks(dir) {
   let removed = 0
   const walk = async (current) => {

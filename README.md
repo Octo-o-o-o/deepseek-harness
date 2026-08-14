@@ -22,6 +22,15 @@ npx @deepseek-ai/dsh web
 
 The command starts the Web UI, served at `http://127.0.0.1:3080` by default. See [Web UI guide](docs/user/guide/index.md).
 
+### Desktop app (dshd)
+
+A native desktop app for macOS (Apple Silicon) is available for users who prefer a double-click install over a terminal. **dshd** bundles the full dsh Web UI, a pinned Node runtime, and a local loopback server into a single self-contained app — no Node.js installation required.
+
+- Download: [latest GitHub Release](https://github.com/Octo-o-o-o/deepseek-harness/releases/latest) (`dshd-*.dmg`, notarized with Apple).
+- Install: open the DMG and drag `dshd` into Applications.
+- The app is signed and notarized (Developer ID), so it opens with a normal double click; verify integrity with the published SHA256.
+- Windows builds and the full desktop design live in [`apps/desktop`](apps/desktop/README.md) and [`proposals/desktop-gui-ecosystem.md`](proposals/desktop-gui-ecosystem.md).
+
 ### Run from source
 
 To run from a repository checkout:

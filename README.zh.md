@@ -22,6 +22,15 @@ npx @deepseek-ai/dsh web
 
 该命令会启动 Web UI，默认地址为 `http://127.0.0.1:3080`。详见 [Web UI 指南](docs/user/guide/index.md)。
 
+### 桌面版（dshd）
+
+习惯双击安装、不想碰终端的用户可以使用原生桌面版 **dshd**（macOS，Apple 芯片）。它把完整的 dsh Web UI、固定版本的 Node 运行时与本地回环服务打包进一个**独立自足**的应用——无需安装 Node.js，也不需要单独启动前后端。
+
+- 下载：[最新 GitHub Release](https://github.com/Octo-o-o-o/deepseek-harness/releases/latest)（`dshd-*.dmg`，已通过 Apple 公证）。
+- 安装：打开 DMG，把 `dshd` 拖进「应用程序」。
+- 应用已签名并公证（Developer ID），双击即可打开；可用随附的 SHA256 校验完整性。
+- Windows 构建与完整桌面设计见 [`apps/desktop`](apps/desktop/README.md) 与 [`proposals/desktop-gui-ecosystem.md`](proposals/desktop-gui-ecosystem.md)。
+
 ### 从源码运行
 
 如需从仓库源码运行：
