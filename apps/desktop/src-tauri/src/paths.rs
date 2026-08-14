@@ -17,7 +17,7 @@ pub enum PathError {
 /// Default `DSH_HOME` for the desktop app (overridden by the `DSH_HOME` env).
 ///
 /// # Returns
-/// macOS Application Support / Windows `%APPDATA%` location, or the env override.
+/// `~/.dsh`, the directory the npm CLI uses, or the env override.
 pub fn default_dsh_home() -> PathBuf {
     if let Ok(value) = env::var("DSH_HOME") {
         if !value.is_empty() {

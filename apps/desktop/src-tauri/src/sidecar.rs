@@ -1,5 +1,6 @@
 //! Spawn the Node sidecar and wait for its ready line.
 
+use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -24,9 +25,15 @@ pub struct SidecarSpec {
     pub cwd: PathBuf,
     /// Extra environment pairs (`DSH_HOME` is always injected by the caller).
     pub env: Vec<(String, String)>,
+    /// What the user's login shell exports, resolved once per launch; empty
+    /// keeps the environment this process was launched with.
+    pub login_env: BTreeMap<String, String>,
     /// Sidecar stdout/stderr log file.
     pub log_path: PathBuf,
 }
+
+/// How long shutdown waits for a log reader before leaving it detached.
+const READER_JOIN_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// A live sidecar plus a oneshot ready-port receiver.
 pub struct SpawnedSidecar {
@@ -100,7 +107,7 @@ pub fn spawn_sidecar(spec: &SidecarSpec) -> Result<SpawnedSidecar, SidecarError>
         .current_dir(&spec.cwd)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    apply_sidecar_env(&mut command, &spec.env);
+    apply_sidecar_env(&mut command, &spec.login_env, &spec.env);
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -195,6 +202,19 @@ impl SidecarProcess {
         self.child.id()
     }
 
+    /// Whether the sidecar's process group still has a member.
+    ///
+    /// # Returns
+    /// `true` while the tree is running.
+    pub fn is_alive(&mut self) -> bool {
+        let mut tree = ChildTree {
+            child: &mut self.child,
+            #[cfg(windows)]
+            job: self.job.as_ref(),
+        };
+        crate::process::ProcessTree::is_alive(&mut tree)
+    }
+
     /// SIGTERM the process group, wait `grace`, then SIGKILL.
     ///
     /// # Parameters
@@ -210,8 +230,19 @@ impl SidecarProcess {
             job: self.job.as_ref(),
         };
         shutdown_tree(&mut tree, grace, Instant::now, thread::sleep);
+        // The readers hold the pipe ends. A process that inherited stdout and
+        // outlived the kill keeps them open, so the join is bounded: quitting
+        // the application must not depend on a grandchild closing a pipe.
         for reader in self.readers.drain(..) {
-            let _ = reader.join();
+            let deadline = Instant::now() + READER_JOIN_TIMEOUT;
+            while !reader.is_finished() && Instant::now() < deadline {
+                thread::sleep(Duration::from_millis(20));
+            }
+            if reader.is_finished() {
+                let _ = reader.join();
+            } else {
+                eprintln!("desktop: sidecar log reader did not finish; leaving it detached");
+            }
         }
     }
 }
@@ -333,6 +364,7 @@ mod tests {
             ],
             cwd: dir,
             env: vec![],
+            login_env: BTreeMap::new(),
             log_path: log_path.clone(),
         };
         let spawned = spawn_sidecar(&spec).expect("spawn fake sidecar");

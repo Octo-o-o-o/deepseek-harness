@@ -87,9 +87,21 @@ A packaged macOS `.app` is typically about 320MB (Node + production deploy). Win
 
 The data directory is the one the npm CLI uses, so sessions, settings, and workspaces are shared live with `npx @deepseek-ai/dsh web`; both may run at once, each on its own OS-assigned port. `desktop.lock` is taken by this shell only, so it excludes a second `dshd`, not a CLI server.
 
-First launch copies `sessions`, `settings`, `attachments`, `storages`, and `profiles` from the pre-unification desktop home — `~/Library/Application Support/DeepSeekHarness`, `%APPDATA%\DeepSeekHarness`, or `DSH_LEGACY_HOME` — when `migration-state.json` is absent and `~/.dsh` holds none of those directories yet, so existing CLI data is never overwritten. Credentials are not copied. A failure restores `migration-backup-<ts>`. `DSH_DESKTOP_MIGRATE_FAIL=1` injects that failure for tests. A second process that cannot take the lock shows “另一个 DeepSeek Harness 进程正在使用数据目录” and does not spawn.
+First launch copies `sessions`, `settings`, `attachments`, `storages`, and `profiles` from the pre-unification desktop home — `~/Library/Application Support/DeepSeekHarness`, `%APPDATA%\DeepSeekHarness`, or `DSH_LEGACY_HOME` — when `migration-state.json` is absent and `~/.dsh` holds none of those directories yet, so existing CLI data is never overwritten. Credentials are not copied. A failure restores `migration-backup-<ts>`. `DSH_DESKTOP_MIGRATE_FAIL=1` injects that failure for tests. A second process that cannot take the lock shows “another dshd instance is using the data directory” and does not spawn.
 
 `sidecar.pid` records the sidecar's process id and entry script. The next boot reaps that process only when both still match, so a pid reused by a CLI `dsh web` is left alone.
+
+## Environment
+
+The sidecar receives the names listed in `src-tauri/src/env.rs` and nothing else, so a credential exported in a shell profile for an unrelated service never reaches the agent. Values come from the application's own environment, with `PATH` as the single exception: it comes from the user's login shell, because an application opened from the Dock inherits `/usr/bin:/bin:/usr/sbin:/sbin` from the launch daemon and the agent's `bash` tool would then find none of the tools the user installed.
+
+The probe runs `$SHELL -ilc` once per launch with `DSH_RESOLVING_ENVIRONMENT=1` set, so a profile can skip work meant for an interactive session, and reads the `env -0` block between its own markers. A shell that fails or takes longer than 5s leaves the launch environment in place. `DSH_DESKTOP_SHELL_ENV=0` skips the probe.
+
+## Links and dropped files
+
+The WebView may load the bundled start page and the loopback sidecar. Any other navigation is refused and opened in the default browser instead: the window has no address bar, so page content must not be able to replace the application UI, and `target="_blank"` links would otherwise do nothing at all.
+
+`dragDropEnabled` is off so the Web UI receives HTML5 drop events itself. Tauri's own drag-drop handler consumes the event before the page sees it, which would leave a file dropped on the conversation with no effect.
 
 ## Token
 
@@ -97,6 +109,7 @@ The shell always generates a per-launch hex token and a bootstrap nonce and inje
 
 ## Known limits
 
+- Apple Silicon only. The bundle and its Node runtime are `arm64`, and `minimumSystemVersion` is the runtime's own floor, macOS 13.5; an Intel Mac runs `npx @deepseek-ai/dsh` instead. Building an `x86_64` payload additionally requires `pruneNonHostArtifacts` to stop deleting `node-pty/prebuilds/darwin-x64` and a terminal check on a real x64 host.
 - Windows process-tree kill (Job Object) and `share_mode(0)` lock are compiled but **not locally verified**. `rustup target add x86_64-pc-windows-msvc` failed in this environment (rustup cache). CI owns the Windows run.
 - Windows sandbox remains partial, same as the CLI.
 - WebView2 presence detection / installer prompt is not wired.

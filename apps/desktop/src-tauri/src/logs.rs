@@ -3,7 +3,8 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+
+use crate::opener::open_path;
 
 /// Rotate `sidecar.log` once it reaches this size.
 pub const SIDECAR_LOG_MAX_BYTES: u64 = 50 * 1024 * 1024;
@@ -60,28 +61,7 @@ pub fn install_panic_hook(home: PathBuf) {
 pub fn open_logs_dir(home: &Path) -> io::Result<()> {
     let logs = home.join("logs");
     fs::create_dir_all(&logs)?;
-    open_dir(&logs)
-}
-
-fn open_dir(path: &Path) -> io::Result<()> {
-    let mut command = open_command();
-    command.arg(path).spawn()?;
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
-fn open_command() -> Command {
-    Command::new("open")
-}
-
-#[cfg(target_os = "windows")]
-fn open_command() -> Command {
-    Command::new("explorer")
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-fn open_command() -> Command {
-    Command::new("xdg-open")
+    open_path(&logs)
 }
 
 #[cfg(test)]

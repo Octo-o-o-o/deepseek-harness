@@ -87,9 +87,21 @@ spctl --assess --type execute --verbose=4 "/Volumes/dshd/dshd.app"
 
 数据目录就是 npm 版 CLI 使用的那一个，因此会话、设置与工作区与 `npx @deepseek-ai/dsh web` 实时共享；两者可同时运行，各自使用系统分配的端口。`desktop.lock` 仅由本壳持有，因此它排斥第二个 `dshd`，而不排斥 CLI 服务。
 
-当 `migration-state.json` 不存在、且 `~/.dsh` 尚未持有这些目录时，首启会从统一前的桌面目录——`~/Library/Application Support/DeepSeekHarness`、`%APPDATA%\DeepSeekHarness` 或 `DSH_LEGACY_HOME`——复制 `sessions`、`settings`、`attachments`、`storages`、`profiles`，因此已有的 CLI 数据绝不会被覆盖。凭据不复制。失败会恢复 `migration-backup-<ts>`。`DSH_DESKTOP_MIGRATE_FAIL=1` 为测试注入该失败。拿不到锁的第二个进程显示"另一个 DeepSeek Harness 进程正在使用数据目录"，并且不拉起 sidecar。
+当 `migration-state.json` 不存在、且 `~/.dsh` 尚未持有这些目录时，首启会从统一前的桌面目录——`~/Library/Application Support/DeepSeekHarness`、`%APPDATA%\DeepSeekHarness` 或 `DSH_LEGACY_HOME`——复制 `sessions`、`settings`、`attachments`、`storages`、`profiles`，因此已有的 CLI 数据绝不会被覆盖。凭据不复制。失败会恢复 `migration-backup-<ts>`。`DSH_DESKTOP_MIGRATE_FAIL=1` 为测试注入该失败。拿不到锁的第二个进程显示 “another dshd instance is using the data directory”，并且不拉起 sidecar。
 
 `sidecar.pid` 记录 sidecar 的进程号与入口脚本。下次启动只在两者仍然匹配时才回收该进程，因此被 CLI 版 `dsh web` 复用的进程号不会被误杀。
+
+## 环境
+
+sidecar 只拿到 `src-tauri/src/env.rs` 列出的那些名字，别的一概不给，因此 shell 配置里为无关服务导出的凭据不会进入 agent。取值来自应用自身的环境，唯一的例外是 `PATH`：它取自用户的登录 shell——从 Dock 打开的应用从启动守护进程继承的是 `/usr/bin:/bin:/usr/sbin:/sbin`，agent 的 `bash` 工具在那里找不到用户装的任何工具。
+
+探测每次启动执行一次 `$SHELL -ilc`，并设置 `DSH_RESOLVING_ENVIRONMENT=1`，让 shell 配置可以跳过只为交互会话准备的工作；随后读取自带标记之间的 `env -0` 块。shell 失败或超过 5s 时保留启动环境。`DSH_DESKTOP_SHELL_ENV=0` 跳过探测。
+
+## 链接与拖入的文件
+
+WebView 只允许加载内置起始页与回环 sidecar。其余导航一律拒绝，改用默认浏览器打开：本窗口没有地址栏，页面内容不得替换应用界面，而 `target="_blank"` 链接若不接管则完全没有反应。
+
+`dragDropEnabled` 关闭，使 Web UI 自己收到 HTML5 drop 事件。Tauri 自带的拖放处理会在页面看到之前吃掉事件，那样把文件拖进对话就毫无反应。
 
 ## Token
 
@@ -97,6 +109,7 @@ spctl --assess --type execute --verbose=4 "/Volumes/dshd/dshd.app"
 
 ## 已知限制
 
+- 仅支持 Apple Silicon。产物与内嵌 Node 均为 `arm64`，`minimumSystemVersion` 取内嵌运行时自身的下限 macOS 13.5；Intel Mac 请改用 `npx @deepseek-ai/dsh`。要构建 `x86_64` 载荷，还需让 `pruneNonHostArtifacts` 不再删除 `node-pty/prebuilds/darwin-x64`，并在真实 x64 机器上验证终端能力。
 - Windows 的进程树终止（Job Object）与 `share_mode(0)` 锁已编译但**未在本机验证**。本环境的 `rustup target add x86_64-pc-windows-msvc` 失败（rustup 缓存）。Windows 运行由 CI 负责。
 - Windows 沙箱仍不完整，与 CLI 相同。
 - 未接入 WebView2 存在性检测 / 安装器提示。

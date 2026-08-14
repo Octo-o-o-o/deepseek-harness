@@ -42,6 +42,28 @@ where
     tree.reap();
 }
 
+/// Whether any process remains in `pgid`.
+///
+/// `kill(0)` reports permission to signal without sending one, which for a
+/// group the shell created is exactly "the group still exists".
+///
+/// # Parameters
+/// - `pgid`: process group id, which for this shell is the sidecar's pid.
+///
+/// # Returns
+/// `true` while the group has at least one member.
+#[cfg(unix)]
+pub fn process_group_has_members(pgid: i32) -> bool {
+    // SAFETY: signal 0 performs error checking only and never delivers.
+    let rc = unsafe { libc::killpg(pgid, 0) };
+    if rc == 0 {
+        return true;
+    }
+    // EPERM means members exist that this process may not signal; only ESRCH
+    // says the group is gone.
+    std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)
+}
+
 /// Send `sig` to every process in `pgid`.
 ///
 /// # Safety
@@ -58,7 +80,7 @@ pub unsafe fn kill_process_group(pgid: i32, sig: i32) -> std::io::Result<()> {
 
 /// Live `std::process::Child` plus its Unix process group or Windows job.
 pub struct ChildTree<'a> {
-    /// The spawned sidecar process.
+    /// The spawned sidecar process, which leads its own process group.
     pub child: &'a mut std::process::Child,
     /// Windows Job Object assigned at spawn. Not locally verified.
     #[cfg(windows)]
@@ -107,7 +129,22 @@ impl ProcessTree for ChildTree<'_> {
     }
 
     fn is_alive(&mut self) -> bool {
-        matches!(self.child.try_wait(), Ok(None))
+        // The leader is asked first because reaping it is what stops the kernel
+        // from keeping a zombie, but the answer is about the group: the sidecar
+        // starts bash, pwsh, and picker processes in it, and one of those
+        // outliving a leader that exited on SIGTERM is exactly the case the
+        // forced kill exists for.
+        if matches!(self.child.try_wait(), Ok(None)) {
+            return true;
+        }
+        #[cfg(unix)]
+        {
+            process_group_has_members(self.child.id() as i32)
+        }
+        #[cfg(not(unix))]
+        {
+            false
+        }
     }
 
     fn reap(&mut self) {

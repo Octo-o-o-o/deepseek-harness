@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Merged into the generated Info.plist by the macOS bundler.
+
+  The agent reads and writes the files a user points it at and runs the commands
+  a user approves, so the system asks for consent the first time it reaches a
+  protected location. Without these strings the request names no reason, and an
+  application that sends Apple events without NSAppleEventsUsageDescription is
+  terminated rather than refused — the workspace picker runs `osascript`.
+-->
+<plist version="1.0">
+<dict>
+  <key>NSDocumentsFolderUsageDescription</key>
+  <string>DeepSeek Harness reads and writes files in the workspace you choose, which may be in your Documents folder.</string>
+  <key>NSDesktopFolderUsageDescription</key>
+  <string>DeepSeek Harness reads and writes files in the workspace you choose, which may be on your Desktop.</string>
+  <key>NSDownloadsFolderUsageDescription</key>
+  <string>DeepSeek Harness reads and writes files in the workspace you choose, which may be in your Downloads folder.</string>
+  <key>NSRemovableVolumesUsageDescription</key>
+  <string>DeepSeek Harness reads and writes files in the workspace you choose, which may be on a removable volume.</string>
+  <key>NSNetworkVolumesUsageDescription</key>
+  <string>DeepSeek Harness reads and writes files in the workspace you choose, which may be on a network volume.</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>DeepSeek Harness uses a system dialog to let you pick a workspace directory.</string>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.developer-tools</string>
+</dict>
+</plist>

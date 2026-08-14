@@ -16,7 +16,9 @@
         "minWidth": 800,
         "minHeight": 560,
         "resizable": true,
-        "center": true
+        "center": true,
+        "create": false,
+        "dragDropEnabled": false
       }
     ],
     "withGlobalTauri": true,
@@ -27,6 +29,14 @@
   "bundle": {
     "active": true,
     "targets": ["app", "dmg"],
+    "category": "DeveloperTool",
+    "publisher": "DeepSeek",
+    "copyright": "Copyright (c) 2026 DeepSeek",
+    "shortDescription": "DeepSeek Harness desktop application",
+    "longDescription": "A desktop application for the DeepSeek Harness agent: a bundled Node runtime and the harness Web UI, served on loopback by a local sidecar.",
+    "macOS": {
+      "minimumSystemVersion": "13.5"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

@@ -14,7 +14,7 @@ pub struct HomeLock {
 #[derive(Debug, thiserror::Error)]
 pub enum LockError {
     /// Another process already holds the lock.
-    #[error("另一个 DeepSeek Harness 进程正在使用数据目录")]
+    #[error("another dshd instance is using the data directory")]
     Busy,
     /// The lock file could not be created.
     #[error("failed to lock data directory: {0}")]

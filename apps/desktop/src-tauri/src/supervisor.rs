@@ -6,6 +6,9 @@ use std::time::Duration;
 
 use crate::sidecar::SidecarProcess;
 
+/// Drain window handed to the sidecar before it is killed.
+const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
+
 /// Owns the live sidecar and the cancel/stop flags.
 pub struct SidecarSupervisor {
     sidecar: Mutex<Option<SidecarProcess>>,
@@ -23,33 +26,77 @@ impl SidecarSupervisor {
         }
     }
 
-    /// Store the spawned sidecar. No-op when a stop is already in flight.
+    /// Store the spawned sidecar. Shuts it down instead when a stop already ran.
+    ///
+    /// The flag is read while the slot is held, because a stop that lands
+    /// between an unlocked read and the write would take an empty slot and
+    /// return, leaving this call to store a process nobody stops afterwards.
     ///
     /// # Parameters
     /// - `process`: live sidecar.
     pub fn install(&self, process: SidecarProcess) {
-        if self.stopping.load(Ordering::SeqCst) {
-            let mut orphan = process;
-            orphan.shutdown(Duration::from_secs(5));
-            return;
-        }
-        if let Ok(mut guard) = self.sidecar.lock() {
-            *guard = Some(process);
+        let orphan = match self.sidecar.lock() {
+            Ok(mut guard) => {
+                if self.stopping.load(Ordering::SeqCst) {
+                    Some(process)
+                } else {
+                    *guard = Some(process);
+                    None
+                }
+            }
+            Err(_) => Some(process),
+        };
+        // Outside the lock: shutdown waits out the grace period.
+        if let Some(mut orphan) = orphan {
+            orphan.shutdown(SHUTDOWN_GRACE);
         }
     }
 
     /// Take the sidecar out of the lock and shut it down. Idempotent.
     pub fn request_stop(&self) {
-        if self.stopping.swap(true, Ordering::SeqCst) {
-            return;
-        }
-        self.cancelled.store(true, Ordering::SeqCst);
         let process = match self.sidecar.lock() {
-            Ok(mut guard) => guard.take(),
-            Err(_) => None,
+            Ok(mut guard) => {
+                if self.stopping.swap(true, Ordering::SeqCst) {
+                    return;
+                }
+                self.cancelled.store(true, Ordering::SeqCst);
+                guard.take()
+            }
+            Err(_) => {
+                self.stopping.store(true, Ordering::SeqCst);
+                self.cancelled.store(true, Ordering::SeqCst);
+                None
+            }
         };
         if let Some(mut process) = process {
-            process.shutdown(Duration::from_secs(5));
+            process.shutdown(SHUTDOWN_GRACE);
+        }
+    }
+
+    /// Block until the sidecar exits on its own.
+    ///
+    /// # Parameters
+    /// - `poll`: interval between liveness checks.
+    ///
+    /// # Returns
+    /// `true` when the sidecar exited while nobody asked it to, `false` once a
+    /// stop is in flight.
+    pub fn wait_for_unexpected_exit(&self, poll: Duration) -> bool {
+        loop {
+            if self.stopping.load(Ordering::SeqCst) {
+                return false;
+            }
+            let alive = match self.sidecar.lock() {
+                Ok(mut guard) => match guard.as_mut() {
+                    Some(process) => process.is_alive(),
+                    None => return false,
+                },
+                Err(_) => return false,
+            };
+            if !alive {
+                return !self.stopping.load(Ordering::SeqCst);
+            }
+            std::thread::sleep(poll);
         }
     }
 
