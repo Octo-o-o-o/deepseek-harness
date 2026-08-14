@@ -10,7 +10,7 @@ import { createHash } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile, rm, chmod, cp, readdir, lstat, readlink, symlink } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
@@ -22,6 +22,9 @@ const NODE_ARCHIVES = {
   'darwin-x64': `node-v${NODE_VERSION}-darwin-x64.tar.gz`,
   'win32-x64': `node-v${NODE_VERSION}-win-x64.zip`,
 }
+
+/** Extensions a bundler can emit a source path into. */
+const TEXT_PAYLOAD = /\.(?:js|mjs|cjs|jsx|ts|tsx|json|map|css|html|htm|txt|md)$/i
 
 const here = dirname(fileURLToPath(import.meta.url))
 const desktopRoot = resolve(here, '..')
@@ -186,7 +189,7 @@ async function deployApp() {
   await pruneNonHostArtifacts(appDir)
   await stripDevArtifacts(join(appDir, 'node_modules'))
   await stripDevArtifacts(appDir)
-  await scrubCheckoutPaths(join(appDir, 'node_modules'))
+  await scrubCheckoutPaths(appDir)
   await rm(consumer, { recursive: true, force: true })
 }
 
@@ -350,6 +353,7 @@ async function embedIntoApp() {
   for (const path of [node, binJs, boot]) {
     if (!(await pathExists(path))) throw new Error(`embed missing ${path}`)
   }
+  await assertNoBuildMachinePaths(appPath)
 }
 
 /**
@@ -424,14 +428,26 @@ async function dirSize(dir) {
  * Neutralize build-machine checkout paths baked into client bundles.
  * The tsdown CSS virtual-id embeds the absolute source path in every UI
  * bundle; shipping that leaks the build machine username and layout for no
- * runtime benefit. Replace the two checkout prefixes with a neutral literal.
+ * runtime benefit.
+ *
+ * The prefix is derived from the checkout being packed rather than written
+ * literally: a literal matches one machine and one directory layout, and a
+ * checkout it does not describe scrubs nothing while still reporting success.
+ *
+ * Rewriting is best-effort across every text payload and both escape forms a
+ * bundler emits. It is not the guarantee: `assertNoBuildMachinePaths` reads the
+ * finished bundle back, including compiled binaries this pass cannot rewrite.
  */
 async function scrubCheckoutPaths(dir) {
-  const prefixes = [
-    '/Users/wangyixiao/WorkSpace/Reference/deepseek-harness/.grok-work/dsh-desktop/',
-    '/Users/wangyixiao/WorkSpace/Reference/deepseek-harness/',
-  ]
   const neutral = 'deepseek-harness/'
+  const prefix = `${repoRoot}/`
+  // A bundler may emit the path raw, JSON-escaped, or percent-encoded inside a
+  // sourceURL; each spelling is a separate literal in the emitted text.
+  const spellings = [
+    [prefix, neutral],
+    [prefix.replaceAll('/', '\\/'), neutral.replaceAll('/', '\\/')],
+    [encodeURI(prefix), encodeURI(neutral)],
+  ]
   let files = 0
   const walk = async (current) => {
     for (const entry of await readdir(current, { withFileTypes: true })) {
@@ -440,22 +456,54 @@ async function scrubCheckoutPaths(dir) {
         await walk(path)
         continue
       }
-      if (!entry.isFile() || !entry.name.endsWith('.js')) continue
+      if (!entry.isFile() || !TEXT_PAYLOAD.test(entry.name)) continue
       let text
       try {
         text = await readFile(path, 'utf8')
       } catch {
+        // Not UTF-8: a compiled artifact under a text extension, handled by the
+        // read-back check rather than by rewriting.
         continue
       }
       let next = text
-      for (const prefix of prefixes) next = next.split(prefix).join(neutral)
+      for (const [from, to] of spellings) next = next.split(from).join(to)
       if (next === text) continue
       await writeFile(path, next)
       files += 1
     }
   }
   await walk(dir)
-  if (files > 0) console.log('pack-sidecar: scrubbed checkout paths in ' + files + ' bundle(s)')
+  if (files > 0) console.log(`pack-sidecar: scrubbed checkout paths in ${String(files)} file(s)`)
+}
+
+/**
+ * Fail when any file under `dir` still contains the build user's home path.
+ *
+ * This is the shipped-artifact guarantee, so it reads bytes rather than text
+ * and covers compiled executables, source maps, and data files alike. It runs
+ * over the finished bundle, after every step that can introduce a path.
+ * @param {string} dir - directory to read back.
+ */
+async function assertNoBuildMachinePaths(dir) {
+  const home = Buffer.from(homedir())
+  const leaked = []
+  const walk = async (current) => {
+    for (const entry of await readdir(current, { withFileTypes: true })) {
+      const path = join(current, entry.name)
+      if (entry.isSymbolicLink()) continue
+      if (entry.isDirectory()) {
+        await walk(path)
+        continue
+      }
+      if (!entry.isFile()) continue
+      if ((await readFile(path)).includes(home)) leaked.push(relative(dir, path))
+    }
+  }
+  await walk(dir)
+  if (leaked.length > 0) {
+    throw new Error(`pack-sidecar: build-machine paths remain in ${String(leaked.length)} file(s): ${leaked.slice(0, 8).join(', ')}`)
+  }
+  console.log('pack-sidecar: no build-machine paths in the packaged tree')
 }
 
 /**

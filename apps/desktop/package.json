@@ -8,7 +8,8 @@
     "tauri": "tauri",
     "dev": "tauri dev",
     "build": "tauri build --bundles app && node scripts/pack-sidecar.mjs embed",
-    "pack": "node scripts/pack-sidecar.mjs"
+    "pack": "node scripts/pack-sidecar.mjs",
+    "dist:mac": "node --import tsx ../../scripts/release/desktop-mac.ts"
   },
   "license": "MIT",
   "devDependencies": {

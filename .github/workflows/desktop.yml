@@ -14,8 +14,10 @@ on:
       - 'packages/boot/app-boot/**'
       - '.github/workflows/desktop.yml'
   workflow_dispatch:
-  # tag: publish a GitHub Release with unsigned artifacts. Signing/notarize
-  # stays commented until certificates exist (M2).
+  # tag: publish a GitHub Release with unsigned artifacts. The signed and
+  # notarized macOS DMG is `pnpm run release:desktop-mac`, run by a maintainer
+  # who holds the Developer ID identity; CI gains it once those credentials are
+  # provisioned as repository secrets.
   # push:
   #   tags: ['desktop-v*']
 
@@ -62,12 +64,11 @@ jobs:
         working-directory: apps/desktop
         run: pnpm exec tauri build
         env:
+          # This job produces unsigned artifacts on both platforms. macOS
+          # signing and notarization live in scripts/release/desktop-mac.ts,
+          # which reads its identity and credentials from the build user's
+          # Keychain; Windows signing remains release work.
           TAURI_SIGNING_PRIVATE_KEY: ''
-          # Signing / notarize (M2):
-          # APPLE_CERTIFICATE
-          # APPLE_CERTIFICATE_PASSWORD
-          # APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID
-          # WINDOWS_CERTIFICATE
 
       - name: Re-embed sidecar into macOS .app
         if: runner.os == 'macOS'

@@ -35,7 +35,9 @@
     ],
     "resources": {
       "../sidecar/dist/bin/node": "bin/node",
-      "../sidecar/dist/app": "app"
+      "../sidecar/dist/app": "app",
+      "../../../LICENSE": "LICENSE",
+      "../../../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
     }
   }
 }

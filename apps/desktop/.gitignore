@@ -6,3 +6,5 @@ notes/
 *.log
 .cargo-home/
 .rustup-home/
+dist/
+sidecar/

@@ -582,7 +582,14 @@ function verifyBuildTimePins(): void {
 }
 
 /** SPDX identifiers this project may ship without further review. */
-const PERMISSIVE_LICENSES = new Set(['MIT', 'ISC', 'BSD-2-Clause', 'BSD-3-Clause', 'Apache-2.0', '0BSD', 'Unlicense', 'CC0-1.0', 'BlueOak-1.0.0', 'Python-2.0'])
+const PERMISSIVE_LICENSES = new Set(['MIT', 'ISC', 'BSD-2-Clause', 'BSD-3-Clause', 'Apache-2.0', '0BSD', 'Unlicense', 'CC0-1.0', 'BlueOak-1.0.0', 'Python-2.0', 'Unicode-3.0', 'Zlib'])
+
+/**
+ * SPDX exceptions that only widen the permissions of an already permissive
+ * license. Every other exception keeps its expression non-permissive, because
+ * an exception is generally a condition on the grant rather than a relaxation.
+ */
+const PERMISSIVE_EXCEPTIONS = new Set(['LLVM-exception'])
 
 /** Evaluate a parsed SPDX expression under the repository's license policy. */
 function isPermissiveSpdx(expression: ReturnType<typeof parseSpdx>): boolean {
@@ -592,7 +599,7 @@ function isPermissiveSpdx(expression: ReturnType<typeof parseSpdx>): boolean {
       : isPermissiveSpdx(expression.left) || isPermissiveSpdx(expression.right)
   }
   return expression.plus !== true
-    && expression.exception === undefined
+    && (expression.exception === undefined || PERMISSIVE_EXCEPTIONS.has(expression.exception))
     && PERMISSIVE_LICENSES.has(expression.license)
 }
 
@@ -660,12 +667,126 @@ ${rows.join('\n')}
  * Render the complete notices document.
  * @returns the exact bytes `THIRD_PARTY_NOTICES.md` must hold.
  */
+/** One committed row of `apps/desktop/src-tauri/licenses.json`. */
+export interface RustCrate {
+  /** Crate name as published. */
+  readonly name: string
+  /** Exact resolved version. */
+  readonly version: string
+  /** SPDX expression the crate declares, or `null` when it declares none. */
+  readonly license: string | null
+  /** Upstream repository, or `null` when the crate declares none. */
+  readonly repository: string | null
+}
+
+/**
+ * Assert the committed Rust inventory still describes `Cargo.lock`.
+ *
+ * The notices run on machines without a Cargo toolchain, so the inventory is
+ * committed rather than derived here. That trade is only safe while a
+ * dependency change cannot pass unnoticed: the lock is the authority, and any
+ * crate present in one and absent from the other fails the generation instead
+ * of silently disclosing a stale set.
+ * @param inventory - rows read from the committed inventory.
+ * @param lock - contents of `apps/desktop/src-tauri/Cargo.lock`.
+ * @param workspaceMembers - crate names this repository publishes itself, which the lock lists and the inventory omits.
+ */
+export function assertRustInventoryCurrent(
+  inventory: readonly RustCrate[],
+  lock: string,
+  workspaceMembers: ReadonlySet<string>,
+): void {
+  const locked = new Set<string>()
+  for (const match of lock.matchAll(/\[\[package\]\]\nname = "([^"]+)"\nversion = "([^"]+)"/g)) {
+    const [, name, version] = match
+    if (name !== undefined && version !== undefined && !workspaceMembers.has(name)) locked.add(`${name}@${version}`)
+  }
+  const recorded = new Set(inventory.map(crate => `${crate.name}@${crate.version}`))
+  const added = [...locked].filter(key => !recorded.has(key))
+  const removed = [...recorded].filter(key => !locked.has(key))
+  if (added.length === 0 && removed.length === 0) return
+  const detail = [
+    added.length === 0 ? '' : `missing ${added.join(', ')}`,
+    removed.length === 0 ? '' : `stale ${removed.join(', ')}`,
+  ].filter(part => part !== '').join('; ')
+  throw new Error(`gen-third-party-notices: apps/desktop/src-tauri/licenses.json no longer matches Cargo.lock (${detail}); run \`pnpm run gen-desktop-rust-licenses\`.`)
+}
+
+/**
+ * Weak-copyleft crates the desktop application links, cleared for distribution
+ * with the source-availability statement the rendered section carries. MPL-2.0
+ * obliges the distributor to tell recipients how to obtain the covered source;
+ * crates.io serves every published version permanently, so naming the exact
+ * versions discharges it.
+ */
+const OWNER_AUTHORIZED_RUST_CRATES = new Set([
+  'cssparser', 'cssparser-macros', 'dtoa-short', 'option-ext', 'selectors',
+])
+
+/**
+ * The crates whose declared terms this repository has not cleared for
+ * distribution, under the same policy the npm tiers use.
+ * @param inventory - rows read from the committed inventory.
+ * @returns every crate whose SPDX expression is absent or not permissive, excluding the authorized set.
+ */
+export function nonPermissiveRustCrates(inventory: readonly RustCrate[]): RustCrate[] {
+  return inventory.filter(crate =>
+    !OWNER_AUTHORIZED_RUST_CRATES.has(crate.name)
+    && (crate.license === null || !isPermissive(crate.license)),
+  )
+}
+
+/**
+ * The authorized weak-copyleft crates present in one inventory.
+ * @param inventory - rows read from the committed inventory.
+ * @returns the rows whose source must be offered alongside the binary.
+ */
+export function copyleftRustCrates(inventory: readonly RustCrate[]): RustCrate[] {
+  return inventory.filter(crate => OWNER_AUTHORIZED_RUST_CRATES.has(crate.name))
+}
+
+/** Render the desktop Rust dependency table. */
+export function renderRustTable(inventory: readonly RustCrate[]): string {
+  const lines = ['| Crate | Version | License |', '| --- | --- | --- |']
+  for (const crate of inventory) {
+    const link = crate.repository ?? `https://crates.io/crates/${crate.name}`
+    lines.push(`| [\`${crate.name}\`](${link}) | ${crate.version} | ${crate.license ?? 'not declared'} |`)
+  }
+  return lines.join('\n')
+}
+
+/**
+ * Read the committed desktop Rust inventory and assert it still describes the
+ * lock and carries only terms this repository ships under.
+ * @returns the inventory rows, sorted as committed.
+ */
+function collectRustCrates(): RustCrate[] {
+  const inventory: unknown = JSON.parse(readFileSync(resolve(root, 'apps/desktop/src-tauri/licenses.json'), 'utf8'))
+  if (!Array.isArray(inventory)) throw new TypeError('apps/desktop/src-tauri/licenses.json must hold an array')
+  const crates = inventory as RustCrate[]
+  const manifest = parseToml(readFileSync(resolve(root, 'apps/desktop/src-tauri/Cargo.toml'), 'utf8'))
+  const packageTable: unknown = manifest.package
+  const declared = typeof packageTable === 'object' && packageTable !== null && !Array.isArray(packageTable)
+    ? (packageTable as { name?: unknown }).name
+    : undefined
+  if (typeof declared !== 'string') throw new TypeError('apps/desktop/src-tauri/Cargo.toml declares no package name')
+  const member = declared
+  assertRustInventoryCurrent(crates, readFileSync(resolve(root, 'apps/desktop/src-tauri/Cargo.lock'), 'utf8'), new Set([member]))
+
+  const unreviewed = nonPermissiveRustCrates(crates)
+  if (unreviewed.length > 0) {
+    throw new Error(`gen-third-party-notices: desktop Rust ${unreviewed.map(crate => `${crate.name} (${crate.license ?? 'no license field'})`).join(', ')} is not a permissive license; review the distribution terms and record the decision before regenerating.`)
+  }
+  return crates
+}
+
 export function render(): string {
   verifyBuildTimePins()
   const npm = collectNpmDeps()
   const runtimeDeps = npm.filter(dep => dep.runtime)
   const devDeps = npm.filter(dep => !dep.runtime)
   const vendored = collectVendored()
+  const rustCrates = collectRustCrates()
   const python = collectPython()
   const patched = collectPatched()
   const claudeDistribution = runtimeDeps.some(
@@ -736,6 +857,13 @@ ${python.map(dep => `| [\`${dep.name}\`](${dep.repo}) | ${dep.license} | ${dep.r
 | Package | License | Role |
 | --- | --- | --- |
 ${BUILD_TIME_TOOLS.map(tool => `| [\`${tool.name}\`](${tool.repo}) | ${tool.license} | ${tool.role} |`).join('\n')}
+
+## Desktop Rust dependencies (\`apps/desktop/\`)
+
+The \`dshd\` desktop application links the crates its \`Cargo.lock\` resolves. Every entry is listed, including crates that only build for another platform, because the lock is the exact set the build resolves from. The inventory is refreshed with \`pnpm run gen-desktop-rust-licenses\` and its crate set is checked against the lock on every generation.
+
+${copyleftRustCrates(rustCrates).length === 0 ? '' : `${copyleftRustCrates(rustCrates).map(crate => `\`${crate.name} ${crate.version}\``).join(', ')} are covered by the Mozilla Public License 2.0. Their complete corresponding source, at the exact versions listed below, is published permanently at \`https://crates.io/crates/<name>/<version>\` and is obtainable with \`cargo vendor\` or \`cargo download\`; the covered files are unmodified in this distribution.\n`}
+${renderRustTable(rustCrates)}
 
 ## First-party native packages
 

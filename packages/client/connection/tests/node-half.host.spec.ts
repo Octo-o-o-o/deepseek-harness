@@ -175,7 +175,7 @@ describe('connection node half', () => {
     for (const path of [MUX_EVENTS_PATH, HOST_EVENTS_PATH]) {
       const rejected: Buffer[] = []
       const socket = new PassThrough()
-      socket.on('data', (chunk) => { rejected.push(Buffer.from(chunk)) })
+      socket.on('data', (chunk: Buffer) => { rejected.push(Buffer.from(chunk)) })
       const ended = once(socket, 'end')
       await upgrades.find(route => route.path === path)!.handler(
         fakeRequest({ host: '127.0.0.1:3080' }, path),
