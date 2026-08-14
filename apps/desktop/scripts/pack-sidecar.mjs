@@ -352,10 +352,24 @@ async function embedIntoApp() {
   }
 }
 
+/** Prebuild directory name for the packing host, the only one a payload needs. */
+function hostPrebuild() {
+  return `${process.platform}-${process.arch}`
+}
+
 /**
- * Remove platform prebuilds and SDK natives the desktop runtime never loads.
+ * Remove platform prebuilds and packages the desktop runtime never loads.
+ *
  * The Claude agent SDK alone carries a 256MB darwin binary through its optional
- * platform packages, and node-pty ships prebuilds for every OS.
+ * platform packages, and node-pty ships prebuilds for every OS. Prebuild
+ * directories are pruned by keeping the host triple rather than by naming the
+ * others: an unlisted triple (win32-arm64 shipped 26MB of Windows .pdb debug
+ * symbols into every macOS payload) is exactly the case a deny list misses.
+ *
+ * `@shikijs/langs` is a build-time dependency of the client UI: the browser
+ * receives highlighting through the built frontend and the served
+ * `/plugins/<id>/client.js` bundles, and a traced boot resolves nothing from
+ * the package. Payloads carry runtime modules only.
  */
 async function pruneNonHostArtifacts(dir) {
   const remove = async (rel) => {
@@ -367,10 +381,37 @@ async function pruneNonHostArtifacts(dir) {
   await remove('node_modules/@anthropic-ai/claude-agent-sdk-win32-x64')
   await remove('node_modules/@anthropic-ai/claude-agent-sdk-linux-x64')
   await remove('node_modules/@img/sharp-wasm32')
-  await remove('node_modules/node-pty/prebuilds/darwin-x64')
-  await remove('node_modules/node-pty/prebuilds/win32-x64')
-  await remove('node_modules/node-pty/prebuilds/linux-x64')
+  await remove('node_modules/@shikijs/langs')
+  await pruneForeignPrebuilds(join(dir, 'node_modules'))
   console.log('pack-sidecar: pruned non-host native artifacts')
+}
+
+/**
+ * Delete every `prebuilds/<triple>` directory that is not the packing host's,
+ * plus any `.pdb` left behind (debug symbols are never loaded).
+ */
+async function pruneForeignPrebuilds(modulesDir) {
+  const host = hostPrebuild()
+  const walk = async (current) => {
+    for (const entry of await readdir(current, { withFileTypes: true })) {
+      if (!entry.isDirectory()) {
+        if (entry.name.endsWith('.pdb')) await rm(join(current, entry.name), { force: true })
+        continue
+      }
+      const path = join(current, entry.name)
+      if (entry.name !== 'prebuilds') {
+        await walk(path)
+        continue
+      }
+      for (const triple of await readdir(path, { withFileTypes: true })) {
+        if (triple.isDirectory() && triple.name !== host) {
+          await rm(join(path, triple.name), { recursive: true, force: true })
+        }
+      }
+      await walk(path)
+    }
+  }
+  await walk(modulesDir)
 }
 
 /**
