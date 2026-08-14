@@ -26,6 +26,8 @@ import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ComposerAttachment, ComposerBarProps } from '../contract/slots.ts'
 import { deriveDecorations } from '../input/decorations.ts'
 import type { DraftDecorations } from '../input/decorations.ts'
+import { promptHistory, recallStep, shouldRecall } from '../input/prompt-history.ts'
+import type { PromptHistoryCursor } from '../input/prompt-history.ts'
 import {
   attachmentErrorText, attachmentRailLabels, dropOverlayLabels, imageSizeText, lightboxLabels,
 } from '../image-labels.ts'
@@ -59,6 +61,7 @@ export function InputBar({
   const running = useSession(s => s.running) ?? false
   const subagent = useSession(s => s.subagent) ?? null
   const removed = useSession(s => s.removed) ?? false
+  const history = promptHistory(useSession(s => s.nodes) ?? [])
   // Plan mode swaps the textarea placeholder (the projection is the folded
   // host value; owner-prop placeholders — hero, session-unavailable — win).
   const planActive = useProjection('plan', plan => plan !== undefined && (plan.pending ? !plan.active : plan.active))
@@ -106,6 +109,13 @@ export function InputBar({
   const dragDepthRef = useRef(0)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const mirrorRef = useRef<HTMLDivElement | null>(null)
+  // Prompt-recall position plus the draft stashed when recall began. A ref,
+  // not state: the cursor is read and written inside one keydown, and a
+  // re-render between the two would let the caret decide again mid-walk.
+  const recallRef = useRef<{ cursor: PromptHistoryCursor; stash: string }>({ cursor: null, stash: '' })
+  useEffect(() => {
+    recallRef.current = { cursor: null, stash: '' }
+  }, [sessionId])
   // IME guard: composition Enter picks a candidate, it must not send. The ref outlives renders;
   // clearing is deferred one tick because Safari delivers the closing keydown AFTER compositionend.
   const composingRef = useRef(false)
@@ -245,6 +255,40 @@ export function InputBar({
     })
   }
 
+  /**
+   * One ArrowUp/ArrowDown recall step over this session's own prompts.
+   * @param el - the draft textarea, whose selection decides whether recall starts.
+   * @param direction - `back` for older prompts, `forward` for newer.
+   * @param write - the live machine faces, narrowed by the caller.
+   * @returns true when the composer handled the key, so the caller suppresses the caret move.
+   */
+  const recallPrompt = (
+    el: HTMLTextAreaElement,
+    direction: 'back' | 'forward',
+    write: { track: (draft: string, caret: number) => void; setDraft: (text: string) => void },
+  ): boolean => {
+    // Same read-only span as every other draft write: a removed session and
+    // the in-flight pending lock both own the draft.
+    if (locked || machineBusy) return false
+    const { cursor, stash } = recallRef.current
+    // selectionStart/End are number|null in lib.dom; the type-aware lint program narrows them.
+    // oxlint-disable-next-line typescript/no-unnecessary-condition
+    if (!shouldRecall(cursor, el.selectionStart ?? 0, el.selectionEnd ?? 0)) return false
+    const live = cursor === null ? draft : stash
+    const step = recallStep(cursor, direction, history, live)
+    // A step that does not move still belongs to the walk once it has begun
+    // (ArrowUp at the oldest prompt holds there); before it begins, an empty
+    // history leaves the key to the caret.
+    if (step.draft === undefined) return cursor !== null
+    recallRef.current = { cursor: step.cursor, stash: live }
+    write.setDraft(step.draft)
+    // Machine-driven replacement never passes through onChange, so re-track:
+    // trigger detection reads the caret that restoreCaret is about to set.
+    write.track(step.draft, step.draft.length)
+    restoreCaret(el, step.draft.length)
+    return true
+  }
+
   // Wheel chaining on the draft scrollport, one lifetime (it is never
   // unmounted — the inert state renders the same element disabled). While the
   // capped box can still move in this direction, keep the native scroll; only
@@ -285,7 +329,19 @@ export function InputBar({
     // oxlint-disable-next-line typescript/no-deprecated
     const composing = composingRef.current || e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229
     if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-      if (keyboard.arbitrate(e.key === 'ArrowUp' ? 'up' : 'down', composing) === 'consumed') e.preventDefault()
+      const back = e.key === 'ArrowUp'
+      // An open trigger menu owns the arrows; prompt recall is what the key
+      // means only after the menu passes it back.
+      if (keyboard.arbitrate(back ? 'up' : 'down', composing) === 'consumed') {
+        e.preventDefault()
+        return
+      }
+      if (composing) return
+      const write = {
+        track: (next: string, caret: number) => { keyboard.track(next, caret) },
+        setDraft: (next: string) => { inputActions.setDraft(next) },
+      }
+      if (recallPrompt(e.currentTarget, back ? 'back' : 'forward', write)) e.preventDefault()
       return
     }
     if (e.key === 'Escape') {
@@ -332,6 +388,8 @@ export function InputBar({
       keyboard.steerQueue()
       return
     }
+    // Sending ends the walk: the sent text becomes history's newest entry.
+    recallRef.current = { cursor: null, stash: '' }
     keyboard.submit(resolveSubmitMode(
       running,
       accelerated ? 'accelerated' : 'enter',
@@ -343,6 +401,9 @@ export function InputBar({
     if (keyboard === undefined || locked) return // disabled/read-only states cannot edit the draft
     if (machineBusy) return // submitting is the read-only span; adjudicating holds the pending lock
     const next = e.target.value
+    // Editing ends the walk: the text is the user's again, and the next
+    // ArrowUp starts from the newest prompt.
+    recallRef.current = { cursor: null, stash: '' }
     keyboard.setDraft(next)
     // selectionStart is number|null in lib.dom; the type-aware lint program narrows it.
     // oxlint-disable-next-line typescript/no-unnecessary-condition
