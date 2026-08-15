@@ -1703,14 +1703,16 @@ describe('single-writer containment', () => {
     const log = oneTurnLog()
 
     await first.appendBatch(header, log.slice(0, 2), false)
-    const adopted = await second.loadStored(header.id)
+    // The length the second writer would compute a repair offset from.
+    const adoptedBytes = (await stat(rawLogPath(root, header.cwd, header.id))).size
+    await second.loadStored(header.id)
     await first.appendBatch(header, log.slice(2, 3), true)
 
     // The offset came from the log the second writer read; applying it now
     // would delete what the first writer committed since.
     await expect(second.commitRepair(
       header,
-      { truncateTo: adopted!.committedBytes ?? 0, recoveredEvents: [] },
+      { truncateTo: adoptedBytes, recoveredEvents: [] },
       [],
     )).rejects.toThrow(/changed outside this writer/)
     expect((await first.loadStored(header.id))?.events).toEqual(log.slice(0, 3))
