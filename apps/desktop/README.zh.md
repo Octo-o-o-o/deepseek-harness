@@ -53,8 +53,27 @@ pnpm --filter @deepseek-ai/dshd run build
 ### 已签名并公证的 macOS DMG
 
 ```sh
-xcrun notarytool store-credentials "dsh-notary" --apple-id "<Apple ID>" --team-id "<Team ID>"
-APPLE_KEYCHAIN_PROFILE=dsh-notary pnpm run release:desktop-mac
+# Store both secrets once. `security` items have proven durable here; the
+# `notarytool store-credentials` profile has silently disappeared between
+# successful builds more than once, so the release reads the app-specific
+# password from a Keychain item of its own instead.
+security add-generic-password -a "$USER" -s dshd-notary-pw -w      # app-specific password
+security add-generic-password -a "$USER" -s dshd-updater-key -w    # updater private-key password
+
+TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.dshd-updater.key)" \
+TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$(security find-generic-password -a "$USER" -s dshd-updater-key -w)" \
+APPLE_ID="<Apple ID>" APPLE_TEAM_ID="<Team ID>" \
+APPLE_APP_SPECIFIC_PASSWORD="$(security find-generic-password -a "$USER" -s dshd-notary-pw -w)" \
+pnpm run release:desktop-mac
+```
+
+updater 密钥要传**内容**,而不是 `TAURI_SIGNING_PRIVATE_KEY_PATH`:否则构建会报 `A public key has been found, but no private key`。签名变量经 `bundleEnvironment` 只到达 bundle 步骤——`buildEnvironment` 会剥离一切凭据形态的名字,因为 `pnpm build` 与 sidecar pack 的 `npm install` 会触及依赖代码（[updater note](../../.agents/notes/implemented/feature/2026-08-15-desktop-in-app-updater.md)）。
+
+开始之前先验证公证凭据,因为公证是最后一步、也是重做代价最高的一步:
+
+```sh
+xcrun notarytool history --apple-id "<Apple ID>" --team-id "<Team ID>" \
+  --password "$(security find-generic-password -a "$USER" -s dshd-notary-pw -w)"
 ```
 
 `scripts/release/desktop-mac.ts` 完成整条发布：仓库构建、sidecar 打包、`tauri build`、sidecar 嵌入、签名、DMG、公证、staple。签名在嵌入之后进行，因为在此之前取得的签名覆盖不到 Node 运行时与已 deploy 的 CLI。签名覆盖成品 bundle 内的每个 Mach-O 文件——按文件头而非可执行位挑选，因此不带 `+x` 的原生插件也在内——并从最深路径开始，使 bundle 封条最后取得。`src-tauri/entitlements.node.plist` 只把 JIT、未签名可执行内存与库校验豁免授予内嵌的 Node 运行时；应用二进制与 sidecar 的辅助工具在 hardened runtime 下签名且不带 entitlements。bundle 另外携带 `LICENSE` 与生成的 `THIRD_PARTY_NOTICES.md`，缺失则拒绝签名。

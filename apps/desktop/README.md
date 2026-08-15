@@ -53,8 +53,27 @@ pnpm --filter @deepseek-ai/dshd run build
 ### Signed and notarized macOS DMG
 
 ```sh
-xcrun notarytool store-credentials "dsh-notary" --apple-id "<Apple ID>" --team-id "<Team ID>"
-APPLE_KEYCHAIN_PROFILE=dsh-notary pnpm run release:desktop-mac
+# Store both secrets once. `security` items have proven durable here; the
+# `notarytool store-credentials` profile has silently disappeared between
+# successful builds more than once, so the release reads the app-specific
+# password from a Keychain item of its own instead.
+security add-generic-password -a "$USER" -s dshd-notary-pw -w      # app-specific password
+security add-generic-password -a "$USER" -s dshd-updater-key -w    # updater private-key password
+
+TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.dshd-updater.key)" \
+TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$(security find-generic-password -a "$USER" -s dshd-updater-key -w)" \
+APPLE_ID="<Apple ID>" APPLE_TEAM_ID="<Team ID>" \
+APPLE_APP_SPECIFIC_PASSWORD="$(security find-generic-password -a "$USER" -s dshd-notary-pw -w)" \
+pnpm run release:desktop-mac
+```
+
+Pass the updater key as **content**, not as `TAURI_SIGNING_PRIVATE_KEY_PATH`: the build otherwise reports `A public key has been found, but no private key`. The signing variables reach only the bundle step, through `bundleEnvironment` — `buildEnvironment` strips every credential-shaped name because `pnpm build` and the sidecar pack's `npm install` touch dependency code ([updater note](../../.agents/notes/implemented/feature/2026-08-15-desktop-in-app-updater.md)).
+
+Verify notarization credentials before starting, since notarization is the last and most expensive step to redo:
+
+```sh
+xcrun notarytool history --apple-id "<Apple ID>" --team-id "<Team ID>" \
+  --password "$(security find-generic-password -a "$USER" -s dshd-notary-pw -w)"
 ```
 
 `scripts/release/desktop-mac.ts` runs the whole release: repository build, sidecar pack, `tauri build`, sidecar embed, signing, DMG, notarization, and stapling. Signing follows the embed step because a signature taken before it does not cover the Node runtime or the deployed CLI. It covers every Mach-O file in the finished bundle, selected by file header rather than by the executable bit so native addons shipped without `+x` are included, and takes the innermost path first so the bundle seal is last. `src-tauri/entitlements.node.plist` grants JIT, unsigned executable memory, and the library-validation exemption to the embedded Node runtime alone; the application binary and the sidecar's helper tools are signed under the hardened runtime with no entitlements. The bundle also carries `LICENSE` and the generated `THIRD_PARTY_NOTICES.md`, and the release refuses to sign without them.
