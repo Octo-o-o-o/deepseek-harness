@@ -28,6 +28,22 @@ connection 插件保留它自己的两处 token 校验。它们是该插件配�
 
 壳也不再只报告二次症状。ready 行失败现在会把 `sidecar.log` 的最后 20 行带进启动失败信息，因此任何致命加载失败——不只是这一种——都能到达错误页，而不是留在 `$DSH_HOME/logs` 里。
 
+## bootstrap cookie 的作用域是整个 origin
+
+守住 `/api` 修好的是 guard 看得见的那个命名空间，没修好插件 HTTP 表面的另一半——那是同一轮排查随后暴露出来的。
+
+`connection.rpc.handle(channel, …)` 是插件提供自有 HTTP 端点的受支持方式：connection 把该 channel 注册为 prefix route，并用同一个启动 token 守卫它（`rpc-host.ts`）。但 `CHANNEL_PATTERN` 只允许一个路径段，`assertChannel` 又保留了 `/api`，因此**每一条** channel 都必然落在 `/api` 之外的顶层路径上——`/dsh-mnemon-read`、`/dsh-context`。
+
+bootstrap 响应此前把 cookie 的作用域限定为 `Path=/api` 外加 `Path=/__dshd_ready`。cookie 只会被发往其作用域覆盖的路径，因此 token 从未到达任何一条 channel，而插件对此无能为力：浏览器也无法给客户端 RPC 的 fetch 附加 `X-DSH-Token`。于是桌面模式在整次启动期间对每条插件 channel 都回 401，而同样的插件在 `dsh web` 下正常——那里没有配置 token，校验是空操作。
+
+现在 cookie 只下发一条，`Path=/`。token 认证的是这个 WebView 的 origin，而不是某一个命名空间。按路径逐个限定在原理上就行不通：channel 是在页面运行期间注册与释放的，远晚于那唯一一次 bootstrap 响应——那次响应本来就无从枚举它们。
+
+改动只有 bootstrap 响应里的一行，connection 未被触及。这是刻意的：在 `dsh web` 下同样这些插件本就能用——那里没有配置 token，connection 的校验是空操作——因此缺陷与修复完全属于桌面组合。
+
+排查中另外浮现两处缺口，**不**在本次改动内处理，因为二者都不是本故障的成因，且都会改变 CLI 行为：专用 channel 用 `bridge(req, res, handler)` 桥接请求体，因而忽略部署配置的 `maxRequestBodyBytes`，在 `/api` 遵守配置上限时仍沿用 160 MiB 默认值；以及客户端 RPC 的 `fetch` 把凭据交给 `same-origin` 默认值，而相邻的两处桌面 fetch 都显式写明了。各自值得一次独立的改动。
+
+`/plugins`（客户端 bundle）与 HMR 事件流仍不鉴权，guard 也不改变这一点。它们是页面加载期的基础设施，在任何握手可被等待之前就被取用，且不携带用户数据——只有 bundle 代码与模块图。给它们加门禁，是用白屏的风险去遮挡本就没有的东西。
+
 ## Alternatives considered
 
 **删掉断言，依赖信任栅栏。** `isTrustedApiRequest` 的 Host 栅栏同样住在 connection 的处理器里，因此它保护不了第三方 exact route 提供的任何东西。只删断言，等于把断言本来要阻止的未鉴权读取直接放出去。
@@ -39,6 +55,12 @@ connection 插件保留它自己的两处 token 校验。它们是该插件配�
 **允许多个 guard。** 没有任何 Consumer 需要第二个，而两个席位也无法共同决定一个二元的准入。单席位与 `registerFallback` 对称，并沿用了它的 disposer 与抛错语义。
 
 **匹配 connection 的 RPC 方法名，在注册时拒绝冲突。** connection 注册的是 prefix，因此除非 connection 主动告知，webserver 无从知道哪些子路径是方法——这种耦合会把 RPC 词汇塞进载体层。
+
+**为每条已注册的 channel 各下发一个 cookie，而不是把作用域放到 origin。** bootstrap 响应只写一次，且发生在页面运行之前；channel 在整个会话期间不断注册与释放，因此任何在该响应之后挂载的 channel——或 HMR 重载后重新挂载的 channel——依然不可达。被本次替换掉的那两行 `Set-Cookie`，本身就是这条死路的开头。
+
+**把 channel 移到 `/api` 之下，好让既有的 `/api` 作用域覆盖它们。** 那会改变每条 channel 的公开路径、弄坏已经发布的插件，只为省下一个 cookie 属性。
+
+**让客户端在 channel 的 fetch 上发送 `X-DSH-Token`，不依赖 cookie。** 页面从来拿不到 token——这正是 nonce 交换的用意。把 token 交给页面 JavaScript 去填进请求头，会推翻整个 bootstrap 所要建立的 HttpOnly 性质。
 
 ## Verification
 
@@ -72,6 +94,20 @@ Test Files  2 failed | 3 passed (5)
 | 同上，带 `dsh-token` cookie | `HTTP/1.1 101 Switching Protocols` |
 | `GET /__dshd_status`，带 `X-DSH-Bootstrap` | 200 |
 | `GET /` | 200 |
+
+cookie 作用域用同样方式验证，装有两个挂载 channel 的插件（`dsh-mnemon`、`dsh-context`），客户端按浏览器的做法应用 RFC 6265 路径规则——先 bootstrap，再用 cookie jar：
+
+| 请求 | 修复前 | 修复后 |
+|---|---|---|
+| `/__dshd_bootstrap` 下发的 cookie | `Path=/api`、`Path=/__dshd_ready` | 一条，`Path=/` |
+| `/dsh-mnemon-read/status`，带 jar | 401 | 200 |
+| `/dsh-context/status`，带 jar | 401 | 200 |
+| `/api/host.describe`，带 jar | 200 | 200 |
+| `/__dshd_ready`，带 jar | 204 | 204 |
+| `/dsh-mnemon-read/status`，无凭据 | 401 | 401 |
+| `/api/host.describe`，无凭据 | 401 | 401 |
+
+突变检查：把 cookie 改回 `Path=/api` 会让 bootstrap 测试失败，其余测试不受影响。同一套探针在不设桌面环境变量时——即 `dsh web` 的姿态——修复前后访问 `/dsh-mnemon-read/status` 与 `/dsh-context/status` 都是 200，证明 CLI 表层从来没有这个缺陷，也不被本次修复触及。
 
 ## Consequences
 

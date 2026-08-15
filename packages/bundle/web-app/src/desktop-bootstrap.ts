@@ -1,10 +1,11 @@
 /**
  * Desktop bootstrap: one-time nonce delivered through the URL fragment,
- * HttpOnly cookie for /api. Neither the token nor the nonce appears in any
- * response body, so reaching the loopback port is not enough to obtain one.
- * The cookie gates the whole `/api` namespace through the webserver admission
- * guard rather than through each route's own handler, so a plugin's `/api`
- * routes are authenticated without that plugin implementing anything.
+ * origin-scoped HttpOnly cookie. Neither the token nor the nonce appears in
+ * any response body, so reaching the loopback port is not enough to obtain
+ * one. The cookie carries the token to every route that asks for it — the
+ * `/api` namespace through the webserver admission guard, and each plugin RPC
+ * channel through connection's own check — so a plugin's HTTP surface is
+ * authenticated without that plugin implementing anything.
  */
 
 import { timingSafeEqual } from 'node:crypto'
@@ -181,12 +182,16 @@ export async function handleDesktopBootstrap(
     return
   }
   const cookie = encodeURIComponent(session.token)
+  // Path=/ because the token authenticates this WebView's whole origin, not
+  // one namespace. Connection admits plugin RPC channels at top-level paths of
+  // their own (`/api` is reserved and the channel pattern forbids a second
+  // segment), and it guards them with this same token — a cookie scoped to
+  // `/api` is never sent there, so every such channel would answer 401 for the
+  // life of the launch. Scoping per path does not scale either: channels are
+  // registered and disposed while the page runs, long after this one response.
   res.writeHead(204, {
     'cache-control': 'no-store',
-    'set-cookie': [
-      `dsh-token=${cookie}; Path=/api; HttpOnly; SameSite=Strict`,
-      `dsh-token=${cookie}; Path=${READY_PATH}; HttpOnly; SameSite=Strict`,
-    ],
+    'set-cookie': `dsh-token=${cookie}; Path=/; HttpOnly; SameSite=Strict`,
   })
   res.end()
 }

@@ -28,6 +28,22 @@ The connection plugin keeps its own two token checks. They are the CLI-facing be
 
 The shell also stops reporting only the symptom. A ready-line failure now carries the last 20 lines of `sidecar.log` into the boot-failure message, so any fatal load failure — not just this one — reaches the error page instead of `$DSH_HOME/logs`.
 
+## The bootstrap cookie is scoped to the origin
+
+Guarding `/api` fixed the namespace the guard can see. It did not fix the other half of the plugin HTTP surface, which the same investigation then exposed.
+
+`connection.rpc.handle(channel, …)` is the supported way for a plugin to serve its own HTTP endpoints: connection registers the channel as a prefix route and guards it with this same launch token (`rpc-host.ts`). But `CHANNEL_PATTERN` admits exactly one path segment and `assertChannel` reserves `/api`, so **every** channel necessarily sits at a top-level path outside `/api` — `/dsh-mnemon-read`, `/dsh-context`.
+
+The bootstrap response used to scope its cookie to `Path=/api` plus `Path=/__dshd_ready`. A cookie is only sent to paths its scope covers, so the token never reached a single channel, and no plugin could do anything about it: the browser cannot attach `X-DSH-Token` to the client RPC's fetches either. Desktop mode therefore answered 401 to every plugin channel for the life of the launch, while the same plugins worked under `dsh web`, where no token is configured and the check is a no-op.
+
+The cookie is now issued once with `Path=/`. The token authenticates this WebView's origin, not one namespace. Scoping per path cannot work even in principle: channels are registered and disposed while the page runs, long after the single bootstrap response that would have had to enumerate them.
+
+The change is one line in the bootstrap response, and connection is untouched. That is deliberate: under `dsh web` the same plugins already work, because no token is configured and connection's check is a no-op, so the defect and its fix belong entirely to the desktop composition.
+
+Two unrelated gaps surfaced during the investigation and are **not** addressed here, because neither causes this failure and both would change CLI behavior: a dedicated channel bridges its request body with `bridge(req, res, handler)` and so ignores the deployment's `maxRequestBodyBytes`, keeping the 160 MiB default while `/api` honors the configured ceiling; and the client RPC's `fetch` leaves credentials to the `same-origin` default while the two neighbouring desktop fetches state it. Each is worth its own change.
+
+`/plugins` (client bundles) and the HMR event stream stay unauthenticated, which the guard does not change. They are page-load infrastructure fetched before any handshake can be awaited, and they carry no user data — bundle code and a module graph. Gating them would risk a blank window to hide nothing.
+
 ## Alternatives considered
 
 **Delete the assertion and rely on the trust fence.** The `isTrustedApiRequest` Host fence lives inside connection's handler too, so it protects nothing a third-party exact route serves. Deleting the assertion alone would have shipped the unauthenticated read the assertion existed to prevent.
@@ -39,6 +55,12 @@ The shell also stops reporting only the symptom. A ready-line failure now carrie
 **Allow multiple guards.** No consumer needs a second one, and two seats could not both decide a binary admission. The single seat mirrors `registerFallback`, whose disposer-and-throw semantics it copies.
 
 **Match only the connection plugin's RPC method names and reject collisions at registration.** Connection registers a prefix, so the webserver cannot know which sub-paths are methods without connection telling it — a coupling that would put the RPC vocabulary into the carrier.
+
+**Issue one cookie per registered channel instead of scoping to the origin.** The bootstrap response is written once, before the page runs; channels are registered and disposed throughout the session, so any channel mounted after that response — or re-mounted after an HMR reload — would still be unreachable. The two `Set-Cookie` lines this replaced were already the beginning of that dead end.
+
+**Move the channels under `/api` so the existing `/api` scope covers them.** That changes the public path of every channel and breaks the plugins that already ship, to save a cookie attribute.
+
+**Have the client send `X-DSH-Token` on channel fetches instead of relying on the cookie.** The page never receives the token — that is the point of the nonce exchange. Handing it to page JavaScript to put in a header would undo the HttpOnly property the whole bootstrap exists to establish.
 
 ## Verification
 
@@ -72,6 +94,20 @@ End to end on the reporting machine, `dsh-usage-stats` re-enabled in the profile
 | same, `dsh-token` cookie | `HTTP/1.1 101 Switching Protocols` |
 | `GET /__dshd_status` with `X-DSH-Bootstrap` | 200 |
 | `GET /` | 200 |
+
+Cookie scope, verified the same way with the two plugins that mount channels installed (`dsh-mnemon`, `dsh-context`), using a client that applies the RFC 6265 path rule as a browser does — bootstrap, then the jar:
+
+| request | before | after |
+|---|---|---|
+| cookie issued by `/__dshd_bootstrap` | `Path=/api`, `Path=/__dshd_ready` | one cookie, `Path=/` |
+| `/dsh-mnemon-read/status` with the jar | 401 | 200 |
+| `/dsh-context/status` with the jar | 401 | 200 |
+| `/api/host.describe` with the jar | 200 | 200 |
+| `/__dshd_ready` with the jar | 204 | 204 |
+| `/dsh-mnemon-read/status`, no credential | 401 | 401 |
+| `/api/host.describe`, no credential | 401 | 401 |
+
+Mutation-checked: reverting the cookie to `Path=/api` fails the bootstrap test and nothing else moves. The same probe run without the desktop environment variables — the `dsh web` posture — reaches `/dsh-mnemon-read/status` and `/dsh-context/status` with 200 both before and after, confirming the CLI surface never had this defect and is not touched by the fix.
 
 ## Consequences
 

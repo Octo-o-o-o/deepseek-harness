@@ -45,6 +45,17 @@ function evaluateInjection(
   return { alertCalls, bootstrap: window.__DSH_DESKTOP_BOOTSTRAP__, rewrittenUrl }
 }
 
+/**
+ * RFC 6265 §5.1.4 path-match: whether a user agent sends a cookie scoped to
+ * `cookiePath` on a request for `requestPath`. Asserting through the real rule
+ * keeps the cookie test about reachability rather than about literal text.
+ */
+function cookiePathMatches(cookiePath: string, requestPath: string): boolean {
+  if (requestPath === cookiePath) return true
+  if (!requestPath.startsWith(cookiePath)) return false
+  return cookiePath.endsWith('/') || requestPath[cookiePath.length] === '/'
+}
+
 describe('desktop /api guard', () => {
   const guard = desktopApiGuard(new DesktopBootstrap('tok', 'nonce'))
   const requestWith = (headers: Record<string, string>): IncomingMessage =>
@@ -174,8 +185,21 @@ describe('HTTP routes', () => {
       })
       expect(first.status).toBe(204)
       const cookies = first.headers.getSetCookie()
-      expect(cookies.some(entry => entry.includes('dsh-token=tok') && entry.includes('Path=/api') && entry.includes('HttpOnly'))).toBe(true)
-      expect(cookies.some(entry => entry.includes(`Path=${READY_PATH}`) && entry.includes('HttpOnly'))).toBe(true)
+      expect(cookies).toHaveLength(1)
+      const issued = cookies[0]!
+      expect(issued).toContain('dsh-token=tok')
+      expect(issued).toContain('HttpOnly')
+      expect(issued).toContain('SameSite=Strict')
+      // The Path decides which routes a browser will ever send the token to,
+      // so it is the contract, not a detail. Connection admits plugin RPC
+      // channels at top-level paths of their own and guards them with this
+      // same token: a narrower scope leaves every such channel answering 401
+      // for the life of the launch, with nothing the plugin can do about it.
+      const scope = /Path=([^;]+)/.exec(issued)?.[1]
+      expect(scope).toBe('/')
+      for (const path of ['/api/host.describe', READY_PATH, '/dsh-plugin-channel/status', '/plugins/entry.js', '/']) {
+        expect(cookiePathMatches(scope!, path)).toBe(true)
+      }
       expect(first.headers.get('cache-control')).toBe('no-store')
 
       const replay = await fetch(`${base}${BOOTSTRAP_PATH}`, {
