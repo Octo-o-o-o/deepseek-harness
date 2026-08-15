@@ -196,7 +196,6 @@ pub fn spawn_sidecar(spec: &SidecarSpec) -> Result<SpawnedSidecar, SidecarError>
 /// to the bounded join.
 #[cfg(unix)]
 fn set_nonblocking<F: std::os::unix::io::AsRawFd>(file: &F) {
-    use std::os::unix::io::AsRawFd;
     let fd = file.as_raw_fd();
     // SAFETY: fcntl on a live pipe descriptor; flags preserved on failure.
     unsafe {

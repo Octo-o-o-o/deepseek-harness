@@ -162,6 +162,8 @@ fn terminate_pid(pid: u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Only the Windows reaping tests spawn helper processes.
+    #[cfg(windows)]
     use std::process::Stdio;
 
     /// Unique temp dir per call: test threads share one process id, so
