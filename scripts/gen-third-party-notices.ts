@@ -581,8 +581,18 @@ function verifyBuildTimePins(): void {
   }
 }
 
-/** SPDX identifiers this project may ship without further review. */
-const PERMISSIVE_LICENSES = new Set(['MIT', 'ISC', 'BSD-2-Clause', 'BSD-3-Clause', 'Apache-2.0', '0BSD', 'Unlicense', 'CC0-1.0', 'BlueOak-1.0.0', 'Python-2.0', 'Unicode-3.0', 'Zlib'])
+/**
+ * SPDX identifiers this project may ship without further review.
+ *
+ * `CDLA-Permissive-2.0` covers data rather than code and entered the desktop
+ * dependency graph with the updater: HTTPS needs rustls, which needs a root
+ * store, which is `webpki-root-certs` — Mozilla's CA set. The permissive
+ * variant carries no copyleft or share-alike obligation; it requires only that
+ * the license and disclaimers travel with the data, which shipping the crate
+ * inside the bundle satisfies. Reviewed and accepted by the owner for that
+ * distribution.
+ */
+const PERMISSIVE_LICENSES = new Set(['MIT', 'ISC', 'BSD-2-Clause', 'BSD-3-Clause', 'Apache-2.0', '0BSD', 'Unlicense', 'CC0-1.0', 'BlueOak-1.0.0', 'Python-2.0', 'Unicode-3.0', 'Zlib', 'CDLA-Permissive-2.0'])
 
 /**
  * SPDX exceptions that only widen the permissions of an already permissive

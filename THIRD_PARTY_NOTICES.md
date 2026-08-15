@@ -202,6 +202,7 @@ The `dshd` desktop application links the crates its `Cargo.lock` resolves. Every
 | [`alloc-stdlib`](https://github.com/dropbox/rust-alloc-no-stdlib) | 0.2.4 | BSD-3-Clause |
 | [`android_system_properties`](https://github.com/nical/android_system_properties) | 0.1.6 | MIT OR Apache-2.0 |
 | [`anyhow`](https://github.com/dtolnay/anyhow) | 1.0.104 | MIT OR Apache-2.0 |
+| [`arbitrary`](https://github.com/rust-fuzz/arbitrary/) | 1.4.2 | MIT OR Apache-2.0 |
 | [`async-broadcast`](https://github.com/smol-rs/async-broadcast) | 0.7.2 | MIT OR Apache-2.0 |
 | [`async-channel`](https://github.com/smol-rs/async-channel) | 2.5.0 | Apache-2.0 OR MIT |
 | [`async-executor`](https://github.com/smol-rs/async-executor) | 1.14.0 | Apache-2.0 OR MIT |
@@ -271,6 +272,7 @@ The `dshd` desktop application links the crates its `Cargo.lock` resolves. Every
 | [`defmt-macros`](https://github.com/knurling-rs/defmt) | 1.1.1 | MIT OR Apache-2.0 |
 | [`defmt-parser`](https://github.com/knurling-rs/defmt) | 1.0.0 | MIT OR Apache-2.0 |
 | [`deranged`](https://github.com/jhpratt/deranged) | 0.5.8 | MIT OR Apache-2.0 |
+| [`derive_arbitrary`](https://github.com/rust-fuzz/arbitrary) | 1.4.2 | MIT OR Apache-2.0 |
 | [`derive_more`](https://github.com/JelteF/derive_more) | 2.1.1 | MIT |
 | [`derive_more-impl`](https://github.com/JelteF/derive_more) | 2.1.1 | MIT |
 | [`digest`](https://github.com/RustCrypto/traits) | 0.10.7 | MIT OR Apache-2.0 |
@@ -301,6 +303,7 @@ The `dshd` desktop application links the crates its `Cargo.lock` resolves. Every
 | [`fastrand`](https://github.com/smol-rs/fastrand) | 2.5.0 | Apache-2.0 OR MIT |
 | [`fdeflate`](https://github.com/image-rs/fdeflate) | 0.3.7 | MIT OR Apache-2.0 |
 | [`field-offset`](https://github.com/Diggsey/rust-field-offset) | 0.3.6 | MIT OR Apache-2.0 |
+| [`filetime`](https://github.com/alexcrichton/filetime) | 0.2.29 | MIT/Apache-2.0 |
 | [`find-msvc-tools`](https://github.com/rust-lang/cc-rs) | 0.1.10 | MIT OR Apache-2.0 |
 | [`flate2`](https://github.com/rust-lang/flate2-rs) | 1.1.9 | MIT OR Apache-2.0 |
 | [`fnv`](https://github.com/servo/rust-fnv) | 1.0.7 | Apache-2.0 / MIT |
@@ -351,6 +354,7 @@ The `dshd` desktop application links the crates its `Cargo.lock` resolves. Every
 | [`http-body-util`](https://github.com/hyperium/http-body) | 0.1.5 | MIT |
 | [`httparse`](https://github.com/seanmonstar/httparse) | 1.10.1 | MIT OR Apache-2.0 |
 | [`hyper`](https://github.com/hyperium/hyper) | 1.11.0 | MIT |
+| [`hyper-rustls`](https://github.com/rustls/hyper-rustls) | 0.27.9 | Apache-2.0 OR ISC OR MIT |
 | [`hyper-util`](https://github.com/hyperium/hyper-util) | 0.1.20 | MIT |
 | [`iana-time-zone`](https://github.com/strawlab/iana-time-zone) | 0.1.65 | MIT OR Apache-2.0 |
 | [`iana-time-zone-haiku`](https://github.com/strawlab/iana-time-zone) | 0.1.2 | MIT OR Apache-2.0 |
@@ -379,6 +383,8 @@ The `dshd` desktop application links the crates its `Cargo.lock` resolves. Every
 | [`jiff-tzdb`](https://github.com/BurntSushi/jiff) | 0.1.8 | Unlicense OR MIT |
 | [`jiff-tzdb-platform`](https://github.com/BurntSushi/jiff) | 0.1.3 | Unlicense OR MIT |
 | [`jni`](https://github.com/jni-rs/jni-rs) | 0.21.1 | MIT/Apache-2.0 |
+| [`jni`](https://github.com/jni-rs/jni-rs) | 0.22.4 | MIT OR Apache-2.0 |
+| [`jni-macros`](https://github.com/jni-rs/jni-rs) | 0.22.4 | MIT OR Apache-2.0 |
 | [`jni-sys`](https://github.com/jni-rs/jni-sys) | 0.3.1 | MIT OR Apache-2.0 |
 | [`jni-sys`](https://github.com/jni-rs/jni-sys) | 0.4.1 | MIT OR Apache-2.0 |
 | [`jni-sys-macros`](https://github.com/jni-rs/jni-sys) | 0.4.1 | MIT OR Apache-2.0 |
@@ -396,10 +402,12 @@ The `dshd` desktop application links the crates its `Cargo.lock` resolves. Every
 | [`litemap`](https://github.com/unicode-org/icu4x) | 0.8.2 | Unicode-3.0 |
 | [`lock_api`](https://github.com/Amanieu/parking_lot) | 0.4.14 | MIT OR Apache-2.0 |
 | [`log`](https://github.com/rust-lang/log) | 0.4.33 | MIT OR Apache-2.0 |
+| [`mac-notification-sys`](https://github.com/h4llow3En/mac-notification-sys) | 0.6.15 | MIT/Apache-2.0 |
 | [`markup5ever`](https://github.com/servo/html5ever) | 0.38.0 | MIT OR Apache-2.0 |
 | [`memchr`](https://github.com/BurntSushi/memchr) | 2.8.3 | Unlicense OR MIT |
 | [`memoffset`](https://github.com/Gilnaa/memoffset) | 0.9.1 | MIT |
 | [`mime`](https://github.com/hyperium/mime) | 0.3.17 | MIT OR Apache-2.0 |
+| [`minisign-verify`](https://github.com/jedisct1/rust-minisign-verify) | 0.2.5 | MIT |
 | [`miniz_oxide`](https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide) | 0.8.9 | MIT OR Zlib OR Apache-2.0 |
 | [`mio`](https://github.com/tokio-rs/mio) | 1.2.2 | MIT |
 | [`moxcms`](https://github.com/awxkee/moxcms.git) | 0.8.1 | BSD-3-Clause OR Apache-2.0 |
@@ -408,6 +416,7 @@ The `dshd` desktop application links the crates its `Cargo.lock` resolves. Every
 | [`ndk-sys`](https://github.com/rust-mobile/ndk) | 0.6.0+11769913 | MIT OR Apache-2.0 |
 | [`new_debug_unreachable`](https://github.com/mbrubeck/rust-debug-unreachable) | 1.0.6 | MIT |
 | [`nix`](https://github.com/nix-rust/nix) | 0.31.3 | MIT |
+| [`notify-rust`](https://github.com/hoodie/notify-rust) | 4.18.0 | MIT OR Apache-2.0 |
 | [`num_enum`](https://github.com/illicitonion/num_enum) | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 |
 | [`num_enum_derive`](https://github.com/illicitonion/num_enum) | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 |
 | [`num-conv`](https://github.com/jhpratt/num-conv) | 0.2.2 | MIT OR Apache-2.0 |
@@ -425,13 +434,16 @@ The `dshd` desktop application links the crates its `Cargo.lock` resolves. Every
 | [`objc2-exception-helper`](https://github.com/madsmtm/objc2) | 0.1.1 | Zlib OR Apache-2.0 OR MIT |
 | [`objc2-foundation`](https://github.com/madsmtm/objc2) | 0.3.2 | MIT |
 | [`objc2-io-surface`](https://github.com/madsmtm/objc2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
+| [`objc2-osa-kit`](https://github.com/madsmtm/objc2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
 | [`objc2-quartz-core`](https://github.com/madsmtm/objc2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
 | [`objc2-ui-kit`](https://github.com/madsmtm/objc2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
 | [`objc2-user-notifications`](https://github.com/madsmtm/objc2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
 | [`objc2-web-kit`](https://github.com/madsmtm/objc2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
 | [`once_cell`](https://github.com/matklad/once_cell) | 1.21.4 | MIT OR Apache-2.0 |
+| [`openssl-probe`](https://github.com/rustls/openssl-probe) | 0.2.1 | MIT OR Apache-2.0 |
 | [`option-ext`](https://github.com/soc/option-ext.git) | 0.2.0 | MPL-2.0 |
 | [`ordered-stream`](https://github.com/danieldg/ordered-stream) | 0.2.0 | MIT OR Apache-2.0 |
+| [`osakit`](https://github.com/mdevils/rust-osakit) | 0.3.1 | MIT OR Apache-2.0 |
 | [`pango`](https://github.com/gtk-rs/gtk-rs-core) | 0.18.3 | MIT |
 | [`pango-sys`](https://github.com/gtk-rs/gtk-rs-core) | 0.18.0 | MIT |
 | [`parking`](https://github.com/smol-rs/parking) | 2.2.1 | Apache-2.0 OR MIT |
@@ -454,6 +466,7 @@ The `dshd` desktop application links the crates its `Cargo.lock` resolves. Every
 | [`portable-atomic-util`](https://github.com/taiki-e/portable-atomic-util) | 0.2.7 | Apache-2.0 OR MIT |
 | [`potential_utf`](https://github.com/unicode-org/icu4x) | 0.1.5 | Unicode-3.0 |
 | [`powerfmt`](https://github.com/jhpratt/powerfmt) | 0.2.0 | MIT OR Apache-2.0 |
+| [`ppv-lite86`](https://github.com/cryptocorrosion/cryptocorrosion) | 0.2.21 | MIT OR Apache-2.0 |
 | [`precomputed-hash`](https://github.com/emilio/precomputed-hash) | 0.1.1 | MIT |
 | [`proc-macro-crate`](https://github.com/bkchr/proc-macro-crate) | 1.3.1 | MIT OR Apache-2.0 |
 | [`proc-macro-crate`](https://github.com/bkchr/proc-macro-crate) | 2.0.2 | MIT OR Apache-2.0 |
@@ -466,6 +479,9 @@ The `dshd` desktop application links the crates its `Cargo.lock` resolves. Every
 | [`quote`](https://github.com/dtolnay/quote) | 1.0.47 | MIT OR Apache-2.0 |
 | [`r-efi`](https://github.com/r-efi/r-efi) | 5.3.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later |
 | [`r-efi`](https://github.com/r-efi/r-efi) | 6.0.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later |
+| [`rand`](https://github.com/rust-random/rand) | 0.9.5 | MIT OR Apache-2.0 |
+| [`rand_chacha`](https://github.com/rust-random/rand) | 0.9.0 | MIT OR Apache-2.0 |
+| [`rand_core`](https://github.com/rust-random/rand) | 0.9.5 | MIT OR Apache-2.0 |
 | [`raw-window-handle`](https://github.com/rust-windowing/raw-window-handle) | 0.6.2 | MIT OR Apache-2.0 OR Zlib |
 | [`redox_syscall`](https://gitlab.redox-os.org/redox-os/syscall) | 0.5.18 | MIT |
 | [`redox_users`](https://gitlab.redox-os.org/redox-os/users) | 0.5.2 | MIT |
@@ -475,16 +491,26 @@ The `dshd` desktop application links the crates its `Cargo.lock` resolves. Every
 | [`regex-automata`](https://github.com/rust-lang/regex) | 0.4.18 | MIT OR Apache-2.0 |
 | [`regex-syntax`](https://github.com/rust-lang/regex) | 0.8.11 | MIT OR Apache-2.0 |
 | [`reqwest`](https://github.com/seanmonstar/reqwest) | 0.13.4 | MIT OR Apache-2.0 |
+| [`ring`](https://github.com/briansmith/ring) | 0.17.14 | Apache-2.0 AND ISC |
 | [`rustc_version`](https://github.com/djc/rustc-version-rs) | 0.4.1 | MIT OR Apache-2.0 |
 | [`rustc-hash`](https://github.com/rust-lang/rustc-hash) | 2.1.3 | Apache-2.0 OR MIT |
 | [`rustix`](https://github.com/bytecodealliance/rustix) | 1.1.4 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
+| [`rustls`](https://github.com/rustls/rustls) | 0.23.43 | Apache-2.0 OR ISC OR MIT |
+| [`rustls-native-certs`](https://github.com/rustls/rustls-native-certs) | 0.8.4 | Apache-2.0 OR ISC OR MIT |
+| [`rustls-pki-types`](https://github.com/rustls/pki-types) | 1.15.1 | MIT OR Apache-2.0 |
+| [`rustls-platform-verifier`](https://github.com/rustls/rustls-platform-verifier) | 0.7.0 | MIT OR Apache-2.0 |
+| [`rustls-platform-verifier-android`](https://github.com/rustls/rustls-platform-verifier) | 0.1.1 | MIT OR Apache-2.0 |
+| [`rustls-webpki`](https://github.com/rustls/webpki) | 0.103.14 | ISC |
 | [`rustversion`](https://github.com/dtolnay/rustversion) | 1.0.23 | MIT OR Apache-2.0 |
 | [`same-file`](https://github.com/BurntSushi/same-file) | 1.0.6 | Unlicense/MIT |
+| [`schannel`](https://github.com/steffengy/schannel-rs) | 0.1.29 | MIT |
 | [`schemars`](https://github.com/GREsau/schemars) | 0.8.22 | MIT |
 | [`schemars`](https://github.com/GREsau/schemars) | 0.9.0 | MIT |
 | [`schemars`](https://github.com/GREsau/schemars) | 1.2.2 | MIT |
 | [`schemars_derive`](https://github.com/GREsau/schemars) | 0.8.22 | MIT |
 | [`scopeguard`](https://github.com/bluss/scopeguard) | 1.2.0 | MIT OR Apache-2.0 |
+| [`security-framework`](https://github.com/kornelski/rust-security-framework) | 3.7.0 | MIT OR Apache-2.0 |
+| [`security-framework-sys`](https://github.com/kornelski/rust-security-framework) | 2.17.0 | MIT OR Apache-2.0 |
 | [`selectors`](https://github.com/servo/stylo) | 0.36.1 | MPL-2.0 |
 | [`semver`](https://github.com/dtolnay/semver) | 1.0.28 | MIT OR Apache-2.0 |
 | [`serde`](https://github.com/serde-rs/serde) | 1.0.229 | MIT OR Apache-2.0 |
@@ -504,7 +530,9 @@ The `dshd` desktop application links the crates its `Cargo.lock` resolves. Every
 | [`sha2`](https://github.com/RustCrypto/hashes) | 0.10.9 | MIT OR Apache-2.0 |
 | [`shlex`](https://github.com/comex/rust-shlex) | 2.0.1 | MIT OR Apache-2.0 |
 | [`signal-hook-registry`](https://github.com/vorner/signal-hook) | 1.4.8 | MIT OR Apache-2.0 |
+| [`simd_cesu8`](https://github.com/seancroach/simd_cesu8) | 1.2.0 | Apache-2.0 OR MIT |
 | [`simd-adler32`](https://github.com/mcountryman/simd-adler32) | 0.3.10 | MIT |
+| [`simdutf8`](https://github.com/rusticstuff/simdutf8) | 0.1.5 | MIT OR Apache-2.0 |
 | [`siphasher`](https://github.com/jedisct1/rust-siphash) | 1.0.3 | MIT/Apache-2.0 |
 | [`slab`](https://github.com/tokio-rs/slab) | 0.4.12 | MIT |
 | [`smallvec`](https://github.com/servo/rust-smallvec) | 1.15.2 | MIT OR Apache-2.0 |
@@ -516,6 +544,7 @@ The `dshd` desktop application links the crates its `Cargo.lock` resolves. Every
 | [`string_cache`](https://github.com/servo/string-cache) | 0.9.0 | MIT OR Apache-2.0 |
 | [`string_cache_codegen`](https://github.com/servo/string-cache) | 0.6.1 | MIT OR Apache-2.0 |
 | [`strsim`](https://github.com/rapidfuzz/strsim-rs) | 0.11.1 | MIT |
+| [`subtle`](https://github.com/dalek-cryptography/subtle) | 2.6.1 | BSD-3-Clause |
 | [`swift-rs`](https://github.com/Brendonovich/swift-rs) | 1.0.7 | MIT OR Apache-2.0 |
 | [`syn`](https://github.com/dtolnay/syn) | 1.0.109 | MIT OR Apache-2.0 |
 | [`syn`](https://github.com/dtolnay/syn) | 2.0.119 | MIT OR Apache-2.0 |
@@ -525,16 +554,21 @@ The `dshd` desktop application links the crates its `Cargo.lock` resolves. Every
 | [`system-deps`](https://github.com/gdesmott/system-deps) | 6.2.2 | MIT OR Apache-2.0 |
 | [`tao`](https://github.com/tauri-apps/tao) | 0.35.3 | Apache-2.0 |
 | [`tao-macros`](https://github.com/tauri-apps/tao) | 0.1.4 | MIT OR Apache-2.0 |
+| [`tar`](https://github.com/composefs/tar-rs) | 0.4.46 | MIT OR Apache-2.0 |
 | [`target-lexicon`](https://github.com/bytecodealliance/target-lexicon) | 0.12.16 | Apache-2.0 WITH LLVM-exception |
 | [`tauri`](https://github.com/tauri-apps/tauri) | 2.11.5 | Apache-2.0 OR MIT |
 | [`tauri-build`](https://github.com/tauri-apps/tauri) | 2.6.3 | Apache-2.0 OR MIT |
 | [`tauri-codegen`](https://github.com/tauri-apps/tauri) | 2.6.3 | Apache-2.0 OR MIT |
 | [`tauri-macros`](https://github.com/tauri-apps/tauri) | 2.6.3 | Apache-2.0 OR MIT |
+| [`tauri-plugin`](https://github.com/tauri-apps/tauri) | 2.6.3 | Apache-2.0 OR MIT |
+| [`tauri-plugin-notification`](https://github.com/tauri-apps/plugins-workspace) | 2.3.3 | Apache-2.0 OR MIT |
 | [`tauri-plugin-single-instance`](https://github.com/tauri-apps/plugins-workspace) | 2.4.3 | Apache-2.0 OR MIT |
+| [`tauri-plugin-updater`](https://github.com/tauri-apps/plugins-workspace) | 2.10.1 | Apache-2.0 OR MIT |
 | [`tauri-runtime`](https://github.com/tauri-apps/tauri) | 2.11.3 | Apache-2.0 OR MIT |
 | [`tauri-runtime-wry`](https://github.com/tauri-apps/tauri) | 2.11.4 | Apache-2.0 OR MIT |
 | [`tauri-utils`](https://github.com/tauri-apps/tauri) | 2.9.3 | Apache-2.0 OR MIT |
 | [`tauri-winres`](https://github.com/tauri-apps/winres) | 0.3.6 | MIT |
+| [`tauri-winrt-notification`](https://github.com/tauri-apps/winrt-notification) | 0.7.3 | MIT OR Apache-2.0 |
 | [`tempfile`](https://github.com/Stebalien/tempfile) | 3.27.0 | MIT OR Apache-2.0 |
 | [`tendril`](https://github.com/servo/html5ever) | 0.5.1 | MIT OR Apache-2.0 |
 | [`thiserror`](https://github.com/dtolnay/thiserror) | 1.0.69 | MIT OR Apache-2.0 |
@@ -548,6 +582,7 @@ The `dshd` desktop application links the crates its `Cargo.lock` resolves. Every
 | [`tinyvec`](https://github.com/Lokathor/tinyvec) | 1.12.0 | Zlib OR Apache-2.0 OR MIT |
 | [`tinyvec_macros`](https://github.com/Soveu/tinyvec_macros) | 0.1.1 | MIT OR Apache-2.0 OR Zlib |
 | [`tokio`](https://github.com/tokio-rs/tokio) | 1.53.1 | MIT |
+| [`tokio-rustls`](https://github.com/rustls/tokio-rustls) | 0.26.4 | MIT OR Apache-2.0 |
 | [`tokio-util`](https://github.com/tokio-rs/tokio) | 0.7.19 | MIT |
 | [`toml`](https://github.com/toml-rs/toml) | 0.8.2 | MIT OR Apache-2.0 |
 | [`toml`](https://github.com/toml-rs/toml) | 0.9.12+spec-1.1.0 | MIT OR Apache-2.0 |
@@ -579,6 +614,7 @@ The `dshd` desktop application links the crates its `Cargo.lock` resolves. Every
 | [`unic-ucd-version`](https://github.com/open-i18n/rust-unic/) | 0.9.0 | MIT/Apache-2.0 |
 | [`unicode-ident`](https://github.com/dtolnay/unicode-ident) | 1.0.24 | (MIT OR Apache-2.0) AND Unicode-3.0 |
 | [`unicode-segmentation`](https://github.com/unicode-rs/unicode-segmentation) | 1.13.3 | MIT OR Apache-2.0 |
+| [`untrusted`](https://github.com/briansmith/untrusted) | 0.9.0 | ISC |
 | [`url`](https://github.com/servo/rust-url) | 2.5.8 | MIT OR Apache-2.0 |
 | [`urlpattern`](https://github.com/denoland/rust-urlpattern) | 0.3.0 | MIT |
 | [`utf8_iter`](https://github.com/hsivonen/utf8_iter) | 1.0.4 | Apache-2.0 OR MIT |
@@ -601,6 +637,7 @@ The `dshd` desktop application links the crates its `Cargo.lock` resolves. Every
 | [`web-sys`](https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/web-sys) | 0.3.104 | MIT OR Apache-2.0 |
 | [`webkit2gtk`](https://github.com/tauri-apps/webkit2gtk-rs) | 2.0.2 | MIT |
 | [`webkit2gtk-sys`](https://github.com/tauri-apps/webkit2gtk-rs) | 2.0.2 | MIT |
+| [`webpki-root-certs`](https://github.com/rustls/webpki-roots) | 1.0.9 | CDLA-Permissive-2.0 |
 | [`webview2-com`](https://github.com/wravery/webview2-rs) | 0.38.2 | MIT |
 | [`webview2-com-macros`](https://github.com/wravery/webview2-rs) | 0.8.1 | MIT |
 | [`webview2-com-sys`](https://github.com/wravery/webview2-rs) | 0.38.2 | MIT |
@@ -647,6 +684,7 @@ The `dshd` desktop application links the crates its `Cargo.lock` resolves. Every
 | [`windows-strings`](https://github.com/microsoft/windows-rs) | 0.4.2 | MIT OR Apache-2.0 |
 | [`windows-strings`](https://github.com/microsoft/windows-rs) | 0.5.1 | MIT OR Apache-2.0 |
 | [`windows-sys`](https://github.com/microsoft/windows-rs) | 0.45.0 | MIT OR Apache-2.0 |
+| [`windows-sys`](https://github.com/microsoft/windows-rs) | 0.52.0 | MIT OR Apache-2.0 |
 | [`windows-sys`](https://github.com/microsoft/windows-rs) | 0.59.0 | MIT OR Apache-2.0 |
 | [`windows-sys`](https://github.com/microsoft/windows-rs) | 0.60.2 | MIT OR Apache-2.0 |
 | [`windows-sys`](https://github.com/microsoft/windows-rs) | 0.61.2 | MIT OR Apache-2.0 |
@@ -664,17 +702,22 @@ The `dshd` desktop application links the crates its `Cargo.lock` resolves. Every
 | [`wry`](https://github.com/tauri-apps/wry) | 0.55.1 | Apache-2.0 OR MIT |
 | [`x11`](https://github.com/AltF02/x11-rs.git) | 2.21.0 | MIT |
 | [`x11-dl`](https://github.com/AltF02/x11-rs.git) | 2.21.0 | MIT |
+| [`xattr`](https://github.com/Stebalien/xattr) | 1.6.1 | MIT OR Apache-2.0 |
 | [`yoke`](https://github.com/unicode-org/icu4x) | 0.8.3 | Unicode-3.0 |
 | [`yoke-derive`](https://github.com/unicode-org/icu4x) | 0.8.2 | Unicode-3.0 |
 | [`zbus`](https://github.com/z-galaxy/zbus/) | 5.19.0 | MIT |
 | [`zbus_macros`](https://github.com/z-galaxy/zbus/) | 5.19.0 | MIT |
 | [`zbus_names`](https://github.com/z-galaxy/zbus/) | 4.3.4 | MIT |
 | [`zcheapstr`](https://github.com/z-galaxy/zcheapstr/) | 1.1.0 | MIT |
+| [`zerocopy`](https://github.com/google/zerocopy) | 0.8.56 | BSD-2-Clause OR Apache-2.0 OR MIT |
+| [`zerocopy-derive`](https://github.com/google/zerocopy) | 0.8.56 | BSD-2-Clause OR Apache-2.0 OR MIT |
 | [`zerofrom`](https://github.com/unicode-org/icu4x) | 0.1.8 | Unicode-3.0 |
 | [`zerofrom-derive`](https://github.com/unicode-org/icu4x) | 0.1.7 | Unicode-3.0 |
+| [`zeroize`](https://github.com/RustCrypto/utils) | 1.9.0 | Apache-2.0 OR MIT |
 | [`zerotrie`](https://github.com/unicode-org/icu4x) | 0.2.4 | Unicode-3.0 |
 | [`zerovec`](https://github.com/unicode-org/icu4x) | 0.11.6 | Unicode-3.0 |
 | [`zerovec-derive`](https://github.com/unicode-org/icu4x) | 0.11.3 | Unicode-3.0 |
+| [`zip`](https://github.com/zip-rs/zip2.git) | 4.6.1 | MIT |
 | [`zmij`](https://github.com/dtolnay/zmij) | 1.0.23 | MIT |
 | [`zvariant`](https://github.com/z-galaxy/zbus/) | 5.14.0 | MIT |
 | [`zvariant_derive`](https://github.com/z-galaxy/zbus/) | 5.14.0 | MIT |
