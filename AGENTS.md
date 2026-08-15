@@ -2,6 +2,19 @@
 
 DeepSeek Harness is a plugin-based agent harness on vendored Cordis: **everything is a plugin**. Read [docs/architecture.md](docs/architecture.md) before changing `packages/`; follow [docs/AGENTS.md](docs/AGENTS.md) for documentation.
 
+## This fork adds the desktop application and nothing else
+
+This repository is a fork of `deepseek-ai/deepseek-harness` that exists to build `apps/desktop`. Every change here must serve that application, and the test is behavioral, not by file path: **no observable behavior of the non-desktop surfaces may change.** Those surfaces are `dsh`, `dsh web` in a browser, and any composition that sets neither `DSH_DESKTOP_TOKEN` nor `DSH_DESKTOP_BOOTSTRAP_NONCE`.
+
+Editing a shared package is therefore allowed only in these shapes, and each must be argued in the PR:
+
+- **A code path only the desktop composition reaches** — the desktop branch of `dsh-web-app`, `desktop-bootstrap.ts`. The file is shared; the execution is not.
+- **A new optional extension point whose absence changes nothing** — `webServer.registerGuard` is the template: a composition that registers no guard routes every request exactly as before.
+
+Everything else is out of bounds, including two failures that look reasonable while making them: changing what a shared package already does for every surface (a tightened limit, a new default, a different status code), and fixing an unrelated defect noticed while investigating. A real defect found in passing belongs in its own change against upstream, not folded into a desktop fix — record it and move on.
+
+Prove the claim rather than asserting it. Run the CLI posture directly — `pnpm dsh --profile web --port <p>` with no desktop environment variables — and exercise the surface the change touches; add `pnpm run test` when the change reaches a shared package at all.
+
 ## Pre-release stance: foundation over blast radius
 
 **Remove this section at the first tagged release.** With no external consumers, prefer the correct foundation over compatibility shims: rename or repackage freely and update every reference together. Backends reject old on-disk formats. SQLite uses monotonic `SCHEMA_VERSION`; `dsh-session` keeps `SESSION_FORMAT_VERSION` at `0` with no compatibility promise.
