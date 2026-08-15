@@ -45,8 +45,13 @@ h1 {
   color: var(--muted);
 }
 
+/* A boot failure carries the tail of the sidecar log, so this holds many long
+   lines: it scrolls inside a bounded box instead of pushing the "Open log
+   directory" button off screen, and wraps rather than clipping a path. */
 #detail {
   max-width: 36rem;
+  max-height: 40vh;
+  overflow-y: auto;
   margin: 0.4rem 0 0;
   padding: 0.85rem 1rem;
   border: 1px solid var(--line);
@@ -54,6 +59,7 @@ h1 {
   color: var(--danger);
   text-align: left;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 button {

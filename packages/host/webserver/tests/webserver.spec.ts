@@ -1,8 +1,9 @@
 /**
  * REAL-composition coverage: a test-only cordis.yml booted through the
  * vendored Loader mounts the webserver row, and every assertion observes the
- * user-visible HTTP surface of the running server (routing precedence, index
- * taps, fallback-seat semantics, per-request error containment, teardown).
+ * user-visible HTTP surface of the running server (routing precedence,
+ * admission-guard precedence, index taps, fallback-seat semantics,
+ * per-request error containment, teardown).
  */
 
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -67,22 +68,52 @@ async function request(port: number, path: string, init?: RequestInit): Promise<
   return { status: response.status, body: (await response.text()).slice(0, 80) }
 }
 
-/** Open one raw upgrade request and return after the handler writes its response. */
-async function upgrade(port: number, path: string): Promise<ReturnType<typeof connect>> {
-  const socket = connect(port, '127.0.0.1')
-  await once(socket, 'connect')
-  const response = once(socket, 'data')
-  socket.write([
+/** The raw bytes of one upgrade request, headers first. */
+function upgradeRequest(port: number, path: string, extra: readonly string[]): string {
+  return [
     `GET ${path} HTTP/1.1`,
     `Host: 127.0.0.1:${String(port)}`,
+    ...extra,
     'Connection: Upgrade',
     'Upgrade: dsh-test',
     '',
     '',
-  ].join('\r\n'))
+  ].join('\r\n')
+}
+
+/** Open one raw upgrade request and return after the handler writes its response. */
+async function upgrade(
+  port: number,
+  path: string,
+  extra: readonly string[] = [],
+): Promise<ReturnType<typeof connect>> {
+  const socket = connect(port, '127.0.0.1')
+  await once(socket, 'connect')
+  const response = once(socket, 'data')
+  socket.write(upgradeRequest(port, path, extra))
   const [data] = await response as [Buffer]
   expect(String(data)).toContain('101 Switching Protocols')
   return socket
+}
+
+/**
+ * Send one upgrade request the server closes rather than accepts, and return
+ * everything it wrote — empty when it destroyed the socket without answering.
+ */
+async function refusedUpgrade(
+  port: number,
+  path: string,
+  extra: readonly string[] = [],
+): Promise<string> {
+  const socket = connect(port, '127.0.0.1')
+  socket.on('error', () => { /* A server-side reset is one of the outcomes under test. */ })
+  await once(socket, 'connect')
+  const chunks: Buffer[] = []
+  socket.on('data', (chunk: Buffer) => { chunks.push(chunk) })
+  const closed = once(socket, 'close')
+  socket.write(upgradeRequest(port, path, extra))
+  await closed
+  return Buffer.concat(chunks).toString()
 }
 
 describe('real Loader composition', () => {
@@ -214,6 +245,61 @@ describe('real Loader composition', () => {
     expect(upgradedServerClosed).toBe(true)
     upgraded.destroy()
     await expect(request(port, '/probe')).rejects.toThrow()
+  })
+
+  it('runs the admission guard ahead of every route, on requests and on upgrades', { timeout: 60_000 }, async () => {
+    const loaded = await loadComposition()
+    const server = loaded.webServer
+    const port = server.port
+
+    // A route and an upgrade the guard must be able to fence without their
+    // owners knowing it exists, plus a fallback seat outside its scope.
+    server.register({ kind: 'exact', path: '/api/plugin', handler: (_req, res) => { res.writeHead(200); res.end('PLUGIN') } })
+    server.registerUpgrade({
+      path: '/api/events',
+      handler: (_req, socket) => { socket.write('HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: dsh-test\r\n\r\n') },
+    })
+    server.registerFallback((_req, res) => { res.writeHead(200); res.end('SHELL') })
+
+    // An empty seat is the CLI and browser posture: everything routes.
+    expect(await request(port, '/api/plugin')).toMatchObject({ status: 200, body: 'PLUGIN' })
+    ;(await upgrade(port, '/api/events')).destroy()
+
+    const release = server.registerGuard((req, pathname) => {
+      if (!pathname.startsWith('/api')) return undefined
+      return req.headers['x-token'] === 'good' ? undefined : 401
+    })
+    expect(() => server.registerGuard(() => undefined)).toThrow(/guard already registered/)
+
+    // Refusal precedes matching, so the route handler never runs — its body is
+    // absent from a response the guard wrote itself.
+    expect(await request(port, '/api/plugin')).toMatchObject({ status: 401, body: '' })
+    expect(await refusedUpgrade(port, '/api/events')).toContain('401 Unauthorized')
+    // Admitted requests reach exactly the route they would have without a guard.
+    expect(await request(port, '/api/plugin', { headers: { 'x-token': 'good' } }))
+      .toMatchObject({ status: 200, body: 'PLUGIN' })
+    ;(await upgrade(port, '/api/events', ['X-Token: good'])).destroy()
+    // Paths the guard admits keep their own semantics, fallback seat included.
+    expect(await request(port, '/elsewhere')).toMatchObject({ status: 200, body: 'SHELL' })
+
+    release()
+    expect(await request(port, '/api/plugin')).toMatchObject({ status: 200, body: 'PLUGIN' })
+
+    // A status with no registered reason phrase still yields a parsable line.
+    const releaseOdd = server.registerGuard(() => 599)
+    expect((await request(port, '/api/plugin')).status).toBe(599)
+    expect(await refusedUpgrade(port, '/api/events')).toMatch(/^HTTP\/1\.1 599 /)
+    releaseOdd()
+
+    // A throwing guard is contained like any other per-request failure: 400 on
+    // HTTP, a destroyed socket on upgrade, and the server keeps serving.
+    const releaseThrowing = server.registerGuard(() => { throw new Error('guard failure') })
+    expect((await request(port, '/api/plugin')).status).toBe(400)
+    expect(await refusedUpgrade(port, '/api/events')).toBe('')
+    releaseThrowing()
+    expect(await request(port, '/api/plugin')).toMatchObject({ status: 200, body: 'PLUGIN' })
+
+    await loaded.fiber.dispose()
   })
 
   it('fails the fiber when the port is already taken (fail-loud at activation)', { timeout: 60_000 }, async () => {

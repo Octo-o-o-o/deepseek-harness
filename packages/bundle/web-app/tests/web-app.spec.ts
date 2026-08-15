@@ -6,12 +6,13 @@
  */
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import type { IncomingMessage } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import type { WebServer } from '@deepseek-ai/dsh-host-webserver'
+import type { WebRequestGuard, WebServer } from '@deepseek-ai/dsh-host-webserver'
 import { apply, Config, internals } from '../src/index.ts'
 import { injectDesktopBootstrapScript } from '../src/desktop-bootstrap.ts'
 import { WEB_STARTUP_SERVICE } from '../src/startup.ts'
@@ -45,21 +46,30 @@ function stageDist(): string {
   return index
 }
 
-/** A fake webServer capturing the fallback seat and index taps. */
-function fakeHttpServer(host: '127.0.0.1' | '0.0.0.0' = '127.0.0.1'): {
+/** A fake webServer capturing the fallback seat, the guard seat, and index taps. */
+function fakeHttpServer(
+  host: '127.0.0.1' | '0.0.0.0' = '127.0.0.1',
+  registrations: { kind: string; path: string; owner: string }[] = [
+    { kind: 'prefix', path: '/api', owner: 'client-connection' },
+  ],
+): {
   server: WebServer
   seat: () => unknown
+  guard: () => WebRequestGuard | undefined
   applyTaps: (html: string) => string
 } {
   let fallback: unknown
+  let guard: WebRequestGuard | undefined
   const taps: ((html: string) => string)[] = []
   const server = {
     host,
     port: 4567,
     register: () => () => {},
-    listRegistrations: () => [
-      { kind: 'prefix' as const, path: '/api', owner: 'client-connection' },
-    ],
+    registerGuard: (installed: WebRequestGuard) => {
+      guard = installed
+      return () => { guard = undefined }
+    },
+    listRegistrations: () => registrations,
     registerFallback: (handler: unknown) => {
       fallback = handler
       return () => { fallback = undefined }
@@ -76,8 +86,14 @@ function fakeHttpServer(host: '127.0.0.1' | '0.0.0.0' = '127.0.0.1'): {
   return {
     server,
     seat: () => fallback,
+    guard: () => guard,
     applyTaps: html => taps.reduce((acc, tap) => tap(acc), html),
   }
+}
+
+/** Minimal request stand-in: the desktop guard reads only headers. */
+function requestWith(headers: Record<string, string>): IncomingMessage {
+  return { headers } as unknown as IncomingMessage
 }
 
 /** A fake Loader whose settlement the test controls (the URL line waits on it). */
@@ -239,14 +255,58 @@ describe('web-app runtime glue', () => {
     await ctx.fiber.dispose()
   })
 
-  it('does not register a bootstrap tap when webStartup has no desktop auth', async () => {
+  it('leaves the bootstrap tap and the guard seat empty without desktop auth', async () => {
     stageDist()
     const ctx = new Context()
-    const { server, applyTaps } = fakeHttpServer()
+    const { server, applyTaps, guard } = fakeHttpServer()
     ctx.provide('webServer', server)
     apply(ctx, new Config({ printUrl: false, surfaceContext: false, trustedHosts: [] }))
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(applyTaps('<head></head>')).toBe('<head></head>')
+    // `dsh web` from a terminal must reach its routes unauthenticated.
+    expect(guard()).toBeUndefined()
+    await ctx.fiber.dispose()
+  })
+
+  it('guards every /api path with the launch token, whoever registered the route', async () => {
+    stageDist()
+    const ctx = new Context()
+    const { server, guard } = fakeHttpServer()
+    ctx.provide('webServer', server)
+    ctx.provide(WEB_STARTUP_SERVICE, {
+      trustedHosts: [],
+      desktopToken: 'tok',
+      desktopBootstrapNonce: 'nonce',
+    })
+    apply(ctx, new Config({ printUrl: false, surfaceContext: false, trustedHosts: [] }))
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const installed = guard()
+    expect(installed).toBeDefined()
+    // A patch-layer plugin's own namespace is authenticated without that
+    // plugin implementing anything, because the seat covers the whole server.
+    expect(installed?.(requestWith({}), '/api/usage-stats/balance')).toBe(401)
+    expect(installed?.(requestWith({ cookie: 'dsh-token=tok' }), '/api/usage-stats/balance')).toBeUndefined()
+    await ctx.fiber.dispose()
+  })
+
+  it('reports foreign /api routes as a warning instead of failing the launch', async () => {
+    stageDist()
+    const ctx = new Context()
+    const { server } = fakeHttpServer('127.0.0.1', [
+      { kind: 'prefix', path: '/api', owner: 'client-connection' },
+      { kind: 'exact', path: '/api/usage-stats/balance', owner: 'unknown' },
+    ])
+    ctx.provide('webServer', server)
+    ctx.provide(WEB_STARTUP_SERVICE, {
+      trustedHosts: [],
+      desktopToken: 'tok',
+      desktopBootstrapNonce: 'nonce',
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    provideLoader(ctx)
+    apply(ctx, new Config({ printUrl: false, surfaceContext: false, trustedHosts: [] }))
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('exact /api/usage-stats/balance owner=unknown'))
     await ctx.fiber.dispose()
   })
 

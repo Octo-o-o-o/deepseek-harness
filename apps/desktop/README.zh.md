@@ -124,14 +124,14 @@ WebView 只允许加载内置起始页与回环 sidecar。其余导航一律拒�
 
 ## Token
 
-壳始终生成每次启动独立的十六进制 token 与 bootstrap nonce，并作为 `DSH_DESKTOP_TOKEN` / `DSH_DESKTOP_BOOTSTRAP_NONCE` 注入。nonce 经导航 URL 的 fragment（`#dshd-nonce=…`）送达页面——user agent 从不把 fragment 发上网络，因此它不出现在任何响应体中；页面读取后即将其从会话历史中抹除。若改为写进 index，任何能访问该 loopback 端口的本机进程都能拿到它，因为 loopback 不携带用户身份。随后 `POST /__dshd_bootstrap` 为 `/api` 设置 HttpOnly 的 `dsh-token` cookie。壳以 `X-DSH-Bootstrap` 轮询 `/__dshd_status`，以 `X-DSH-Token` 调用 `/api/host.describe`，二者都在 WebView 客户端 POST `/__dshd_ready` 之后。token 不会进入 argv、任何 URL 或日志。不带这些环境变量的 `dsh web` 行为不变。
+壳始终生成每次启动独立的十六进制 token 与 bootstrap nonce，并作为 `DSH_DESKTOP_TOKEN` / `DSH_DESKTOP_BOOTSTRAP_NONCE` 注入。nonce 经导航 URL 的 fragment（`#dshd-nonce=…`）送达页面——user agent 从不把 fragment 发上网络，因此它不出现在任何响应体中；页面读取后即将其从会话历史中抹除。若改为写进 index，任何能访问该 loopback 端口的本机进程都能拿到它，因为 loopback 不携带用户身份。随后 `POST /__dshd_bootstrap` 为 `/api` 设置 HttpOnly 的 `dsh-token` cookie。该 cookie 由 webserver 的准入 guard 在 route 匹配之前校验，而不是在某一条 route 的处理器内校验，因此 token 守住整个 `/api` 命名空间，包括 profile patch 插件注册的 route。壳以 `X-DSH-Bootstrap` 轮询 `/__dshd_status`，以 `X-DSH-Token` 调用 `/api/host.describe`，二者都在 WebView 客户端 POST `/__dshd_ready` 之后。token 不会进入 argv、任何 URL 或日志。不带这些环境变量的 `dsh web` 行为不变。
 
 ## 已知限制
 
 - macOS 仅 Apple Silicon。bundle 与其 Node 运行时都是 `arm64`，`minimumSystemVersion` 取运行时自身的下限 macOS 13.5；Intel Mac 请改用 `npx @deepseek-ai/dsh`。构建 `x86_64` 载荷还需让 `pruneNonHostArtifacts` 停止删除 `node-pty/prebuilds/darwin-x64`，并在真实 x64 主机上做终端验证。
 - Windows 关停直接终止 Job Object，没有排空窗口；Unix 有 5 秒排空后才强制杀组。会话按事务落盘，两条路径都崩溃安全。
 - Windows 沙箱仍不完整，与 CLI 相同。
-- **注册了 `/api` 路由的插件会导致无法启动。** 桌面模式拒绝任何不属于自己的 `/api` 注册：`match()` 让 exact 路由优先于 connection 的 prefix，而桌面 token 是在 connection 自己的处理器内校验的——因此第三方 exact 路由会在一个不携带用户身份的 loopback 端口上提供未鉴权数据。该拒绝对整个 Loader 是致命的，于是一个插件就能让应用起不来，而壳只报告 `sidecar stdout closed before the ready line`；真实原因在 `$DSH_HOME/logs/sidecar.log`。从 profile patch 中移除该插件的 `insert` 即可恢复。
+- 插件的 exact `/api` 路由优先于 connection 的 prefix，因此与某个 RPC 方法同名的路由（`/api/session.create`）会在整次启动期间顶替该方法。鉴权不受影响——准入 guard 覆盖每条 `/api` 路径——启动时也会把这种组合报到 stderr，但没有任何东西阻止这种冲突。
 - 未接入 WebView2 存在性检测 / 安装器提示。
 - 只有 macOS 有签名发布路径。`build` 脚本与 CI 两个平台的产物仍未签名，Windows 与 Linux 的安装包格式及其签名仍属待办发布工作。
 - 从沙箱内 `open` 该 `.app` 可能失败（`LSOpen` -54）；直接启动 `Contents/MacOS/dshd` 仍能拉起 sidecar。

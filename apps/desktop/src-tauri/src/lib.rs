@@ -37,7 +37,7 @@ use tauri::{AppHandle, Manager, WebviewWindowBuilder};
 
 use crate::health::{check_host_described, check_loader_ready, wait_desktop_client_ready};
 use crate::lock::{try_lock_home, HomeLock};
-use crate::logs::{install_panic_hook, open_logs_dir, rotate_sidecar_log};
+use crate::logs::{install_panic_hook, open_logs_dir, rotate_sidecar_log, sidecar_log_tail};
 use crate::migrate::{
     default_legacy_home, inject_fault_from_env, migrate_legacy_home, MigrationReport,
 };
@@ -286,7 +286,11 @@ fn boot_and_navigate(
                     reason: err.to_string(),
                 },
             );
-            return Err(err.to_string());
+            // A ready-line failure only says the sidecar stopped talking. The
+            // reason it stopped — a fatal Loader diagnostic, most often — is in
+            // the log the shell already tees, so quote it rather than leave the
+            // user with the symptom.
+            return Err(boot_failure_detail(&err.to_string(), &spec.log_path));
         }
     };
     phase = transition(phase, BootEvent::Bound { port });
@@ -382,6 +386,22 @@ Backup: {}",
 
 fn show_error(window: &tauri::WebviewWindow, splash: Option<&tauri::Url>, message: &str) {
     show_on_splash(window, splash, "window.__DSH_SHOW_ERROR__", message);
+}
+
+/// Extend a boot-failure reason with the end of the sidecar log.
+///
+/// # Parameters
+/// - `reason`: the failure the shell itself observed.
+/// - `log_path`: sidecar log the shell tees stdout and stderr into.
+///
+/// # Returns
+/// `reason` alone when the log holds nothing readable, otherwise `reason`
+/// followed by the log path and its trailing lines.
+fn boot_failure_detail(reason: &str, log_path: &Path) -> String {
+    match sidecar_log_tail(log_path) {
+        None => reason.to_string(),
+        Some(tail) => format!("{reason}\n\n{}:\n{tail}", log_path.display()),
+    }
 }
 
 /// Resource URL of the bundled start page, polled until the WebView stops
@@ -513,5 +533,23 @@ mod tests {
         assert!(!is_sidecar_origin(&url("http://127.0.0.1:12345/"), 1234));
         assert!(!is_sidecar_origin(&url("https://127.0.0.1:1234/"), 1234));
         assert!(!is_sidecar_origin(&url("http://localhost:1234/"), 1234));
+    }
+
+    #[test]
+    fn boot_failure_quotes_the_sidecar_log_when_there_is_one() {
+        let dir = std::env::temp_dir().join(format!("dsh-boot-detail-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("sidecar.log");
+        // Without a log the shell can only report what it observed itself.
+        assert_eq!(
+            boot_failure_detail("sidecar stdout closed before the ready line", &path),
+            "sidecar stdout closed before the ready line"
+        );
+        std::fs::write(&path, "dsh: fatal load failure: web-app: boom\n").unwrap();
+        let message = boot_failure_detail("sidecar stdout closed before the ready line", &path);
+        assert!(message.starts_with("sidecar stdout closed before the ready line\n\n"));
+        assert!(message.contains(&path.display().to_string()));
+        assert!(message.ends_with("dsh: fatal load failure: web-app: boom"));
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

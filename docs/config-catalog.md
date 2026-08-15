@@ -805,7 +805,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/host/webserver/src/index.ts:61`](../packages/host/webserver/src/index.ts)
+Source: [`packages/host/webserver/src/index.ts:74`](../packages/host/webserver/src/index.ts)
 
 <a id="deepseek-aidsh-invariants"></a>
 
@@ -2893,7 +2893,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/bundle/web-app/src/index.ts:50`](../packages/bundle/web-app/src/index.ts)
+Source: [`packages/bundle/web-app/src/index.ts:51`](../packages/bundle/web-app/src/index.ts)
 
 <a id="deepseek-aidsh-web-fetch-http"></a>
 

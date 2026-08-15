@@ -562,6 +562,8 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   LocaleDict: 'service-local dictionary fields are owned by packages/client/i18n/src/index.ts',
   ThemeTokens: 'service-local token dictionary is owned by packages/client/ui-theme/src/index.ts',
   Translate: 'service-local bound translator is owned by packages/client/i18n/src/index.ts',
+  WebRequestGuard:
+    'admission-check contract is owned by packages/host/webserver/src/index.ts',
   WebUpgradeRoute:
     'upgrade route registration contract is owned by packages/host/webserver/src/index.ts',
   WebRegistration:

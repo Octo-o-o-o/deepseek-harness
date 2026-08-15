@@ -1,17 +1,20 @@
 /**
- * Desktop bootstrap session: nonce consume, cookie issuance, status, and
- * script-element safety of the injected nonce literal.
+ * Desktop bootstrap session: nonce consume, cookie issuance, status,
+ * script-element safety of the injected nonce literal, and the server-wide
+ * `/api` guard plus its foreign-route report.
  */
 
 import { createServer } from 'node:http'
+import type { IncomingMessage } from 'node:http'
 import vm from 'node:vm'
 import { describe, expect, it } from 'vitest'
 import {
-  assertDesktopApiExclusive,
   BOOTSTRAP_FRAGMENT_KEY,
   BOOTSTRAP_PATH,
   BOOTSTRAP_TTL_MS,
   DesktopBootstrap,
+  describeForeignApiRoutes,
+  desktopApiGuard,
   handleDesktopBootstrap,
   handleDesktopReady,
   handleDesktopStatus,
@@ -42,33 +45,47 @@ function evaluateInjection(
   return { alertCalls, bootstrap: window.__DSH_DESKTOP_BOOTSTRAP__, rewrittenUrl }
 }
 
-describe('desktop /api exclusive audit', () => {
-  it('allows connection-owned /api routes and rejects exact, longer-prefix, and upgrade shadows', () => {
-    expect(() => {
-      assertDesktopApiExclusive([
-        { kind: 'prefix', path: '/api', owner: 'client-connection' },
-        { kind: 'upgrade', path: '/api/events.mux', owner: 'client-connection' },
-        { kind: 'upgrade', path: '/api/events.host', owner: 'client-connection' },
-        { kind: 'fallback', path: '*', owner: 'frontend-static' },
-      ])
-    }).not.toThrow()
-    expect(() => {
-      assertDesktopApiExclusive([
-        { kind: 'prefix', path: '/api', owner: 'client-connection' },
-        { kind: 'exact', path: '/api/host.describe', owner: 'shadow' },
-      ])
-    }).toThrow(/exact \/api\/host.describe owner=shadow/)
-    expect(() => {
-      assertDesktopApiExclusive([
-        { kind: 'prefix', path: '/api', owner: 'client-connection' },
-        { kind: 'prefix', path: '/api/internal', owner: 'unknown' },
-      ])
-    }).toThrow(/prefix \/api\/internal owner=unknown/)
-    expect(() => {
-      assertDesktopApiExclusive([
-        { kind: 'upgrade', path: '/api/events.other', owner: 'patch' },
-      ])
-    }).toThrow(/upgrade \/api\/events.other owner=patch/)
+describe('desktop /api guard', () => {
+  const guard = desktopApiGuard(new DesktopBootstrap('tok', 'nonce'))
+  const requestWith = (headers: Record<string, string>): IncomingMessage =>
+    ({ headers } as unknown as IncomingMessage)
+
+  it('requires the launch token on every /api path, including one no harness plugin registered', () => {
+    expect(guard(requestWith({}), '/api/usage-stats/balance')).toBe(401)
+    expect(guard(requestWith({ cookie: 'dsh-token=tok' }), '/api/usage-stats/balance')).toBeUndefined()
+    expect(guard(requestWith({ 'x-dsh-token': 'tok' }), '/api/host.describe')).toBeUndefined()
+    expect(guard(requestWith({ cookie: 'dsh-token=other' }), '/api/host.describe')).toBe(401)
+    expect(guard(requestWith({}), '/api')).toBe(401)
+  })
+
+  it('admits everything outside the namespace, so the bootstrap exchange still works', () => {
+    // The route that issues the cookie cannot present one, and the status
+    // route authenticates with the nonce header instead.
+    expect(guard(requestWith({}), BOOTSTRAP_PATH)).toBeUndefined()
+    expect(guard(requestWith({}), STATUS_PATH)).toBeUndefined()
+    expect(guard(requestWith({}), '/')).toBeUndefined()
+    expect(guard(requestWith({}), '/apiary')).toBeUndefined()
+  })
+})
+
+describe('foreign /api route report', () => {
+  it('stays silent for a connection-only composition and names every other owner', () => {
+    expect(describeForeignApiRoutes([
+      { kind: 'prefix', path: '/api', owner: 'client-connection' },
+      { kind: 'upgrade', path: '/api/events.mux', owner: 'client-connection' },
+      { kind: 'upgrade', path: '/api/events.host', owner: 'client-connection' },
+      { kind: 'fallback', path: '*', owner: 'frontend-static' },
+    ])).toBeUndefined()
+    expect(describeForeignApiRoutes([
+      { kind: 'prefix', path: '/api', owner: 'client-connection' },
+      { kind: 'exact', path: '/api/host.describe', owner: 'shadow' },
+      { kind: 'prefix', path: '/api/internal', owner: 'unknown' },
+      { kind: 'upgrade', path: '/api/events.other', owner: 'patch' },
+    ])).toBe(
+      'web-app: /api routes owned by other plugins are served ahead of the connection prefix '
+      + '(exact /api/host.describe owner=shadow, prefix /api/internal owner=unknown, upgrade /api/events.other owner=patch); '
+      + 'the desktop launch token still gates them, but an exact path matching an RPC method would replace it',
+    )
   })
 })
 

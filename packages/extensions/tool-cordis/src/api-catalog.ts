@@ -2060,6 +2060,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'The browser HTTP carrier service. Activation listens immediately. Route registration order does not affect requests because configured named routes must be distinct, and the fallback handler answers anything not yet claimed during startup with 404 until its owner registers. A listen failure rejects initialization, and the boot process reports the failed fiber.',
     methods: [
       {
+        signature: 'registerGuard(guard: WebRequestGuard): () => void',
+        description: 'Claim the admission-guard seat: the WebRequestGuard every HTTP request and upgrade passes before route matching, so an authorization rule covers the whole server instead of only the routes whose owners implement it. One owner only — a second registration throws, because a request either is admitted or is not, and two seats could not both decide that. The seat is optional: a composition that leaves it empty routes every request, which is the posture of a deployment whose routes fence themselves. Guards claim no route, so they do not appear in WebServer.listRegistrations.',
+        parameters: [{ name: 'guard', description: 'returns undefined to admit, or the refusing HTTP status.' }],
+        returns: 'the disposer releasing the seat.',
+      },
+      {
         signature: 'register(route: WebRoute): () => void',
         description: 'Register a named route. Duplicate (kind, path) throws — route patterns are a composition-level contract, so a collision is a misconfiguration.',
         parameters: [{ name: 'route', description: 'kind, path, and the owning handler.' }],
@@ -4570,6 +4576,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WebRegistrationKind',
     declaration: 'export type WebRegistrationKind = WebRouteKind | \'upgrade\' | \'fallback\';',
+  },
+  {
+    name: 'WebRequestGuard',
+    declaration: 'export type WebRequestGuard = (req: IncomingMessage, pathname: string) => number | undefined;',
   },
   {
     name: 'WebResultView',

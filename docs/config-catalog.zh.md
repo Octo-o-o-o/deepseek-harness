@@ -807,7 +807,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/host/webserver/src/index.ts:61`](../packages/host/webserver/src/index.ts)
+来源：[`packages/host/webserver/src/index.ts:74`](../packages/host/webserver/src/index.ts)
 
 <a id="deepseek-aidsh-invariants"></a>
 
@@ -2895,7 +2895,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/bundle/web-app/src/index.ts:38`](../packages/bundle/web-app/src/index.ts)
+来源：[`packages/bundle/web-app/src/index.ts:51`](../packages/bundle/web-app/src/index.ts)
 
 <a id="deepseek-aidsh-web-fetch-http"></a>
 

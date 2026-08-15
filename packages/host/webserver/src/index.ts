@@ -1,14 +1,15 @@
 /**
  * @deepseek-ai/dsh-host-webserver — Web route-registration plugin: a node:http
- * server plus the `webServer` service (HTTP and upgrade route registries,
- * index transform taps, and the single fallback seat for everything no route
+ * server plus the `webServer` service (HTTP and upgrade route registries, the
+ * single admission-guard seat every request passes before routing, index
+ * transform taps, and the single fallback seat for everything no route
  * claims). Knows no harness concepts and serves no files; the composing
  * application's frontend plugin owns dist serving through the fallback hook.
  * Web shape only — Electron loads dist over file:// and carries fetch over an
  * IPC bridge. This package never prints: the URL line belongs to the shell.
  */
 
-import { createServer } from 'node:http'
+import { createServer, STATUS_CODES } from 'node:http'
 import type { IncomingMessage, ServerResponse, Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { Duplex } from 'node:stream'
@@ -47,6 +48,18 @@ export interface WebRoute {
   owner?: string
 }
 
+/**
+ * Admission check the server runs on every HTTP request and every upgrade
+ * before it consults any route table. Route handlers can only fence the routes
+ * they own, so authorization that must hold for the whole server — including
+ * paths registered by plugins the deployment does not control — belongs here.
+ *
+ * @param req - the incoming request; headers carry whatever the check reads.
+ * @param pathname - the request pathname, parsed once by the server.
+ * @returns undefined to admit the request, or the HTTP status refusing it.
+ */
+export type WebRequestGuard = (req: IncomingMessage, pathname: string) => number | undefined
+
 /** One exact-path HTTP upgrade registration. */
 export interface WebUpgradeRoute {
   /** Absolute pathname, no trailing slash. */
@@ -63,6 +76,20 @@ export interface Config {
   host: '127.0.0.1' | '0.0.0.0'
   /** Listen port; zero requests an OS-assigned port. */
   port: number
+}
+
+/**
+ * Status-only HTTP response refusing one upgrade on the raw socket, which
+ * carries no ServerResponse to write through.
+ */
+function refusalResponse(status: number): string {
+  return [
+    `HTTP/1.1 ${String(status)} ${STATUS_CODES[status] ?? ''}`,
+    'Connection: close',
+    'Content-Length: 0',
+    '',
+    '',
+  ].join('\r\n')
 }
 
 /**
@@ -84,6 +111,7 @@ export class WebServer extends Service {
   private readonly upgradedSockets = new Set<Duplex>()
   private readonly indexTaps: ((html: string) => string)[] = []
   private readonly registrations: WebRegistration[] = []
+  private guard: WebRequestGuard | undefined
   private fallback: WebRoute['handler'] | undefined
   private server!: Server
   private listenedPort!: number
@@ -100,6 +128,29 @@ export class WebServer extends Service {
   /** The configured bind host (the loopback or all-interfaces literal). */
   get host(): Config['host'] {
     return this.config.host
+  }
+
+  /**
+   * Claim the admission-guard seat: the {@link WebRequestGuard} every HTTP
+   * request and upgrade passes before route matching, so an authorization rule
+   * covers the whole server instead of only the routes whose owners implement
+   * it. One owner only — a second registration throws, because a request
+   * either is admitted or is not, and two seats could not both decide that.
+   * The seat is optional: a composition that leaves it empty routes every
+   * request, which is the posture of a deployment whose routes fence
+   * themselves. Guards claim no route, so they do not appear in
+   * {@link WebServer.listRegistrations}.
+   * @param guard - returns undefined to admit, or the refusing HTTP status.
+   * @returns the disposer releasing the seat.
+   */
+  registerGuard(guard: WebRequestGuard): () => void {
+    if (this.guard !== undefined) {
+      throw new Error('webserver: guard already registered')
+    }
+    this.guard = guard
+    return () => {
+      this.guard = undefined
+    }
   }
 
   /**
@@ -198,6 +249,12 @@ export class WebServer extends Service {
       /* v8 ignore next -- `?? '/'` arm: node:http always sets url on server
       requests; the field is only optional on the client-side IncomingMessage type */
       const rawPath = new URL(req.url ?? '/', 'http://x').pathname
+      const refused = this.guard?.(req, rawPath)
+      if (refused !== undefined) {
+        res.writeHead(refused)
+        res.end()
+        return
+      }
       const route = this.match(rawPath)
       if (route !== undefined) {
         await route.handler(req, res)
@@ -239,7 +296,15 @@ export class WebServer extends Service {
       let route: WebUpgradeRoute | undefined
       try {
         /* v8 ignore next -- node:http always sets url on server requests. */
-        route = this.upgrades.get(new URL(req.url ?? '/', 'http://x').pathname)
+        const pathname = new URL(req.url ?? '/', 'http://x').pathname
+        const refused = this.guard?.(req, pathname)
+        if (refused !== undefined) {
+          // Written before any handshake, so the client sees the refusal
+          // rather than a bare reset it could only read as a transport fault.
+          socket.end(refusalResponse(refused))
+          return
+        }
+        route = this.upgrades.get(pathname)
       } catch (error) {
         this.ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
         socket.destroy()

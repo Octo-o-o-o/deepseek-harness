@@ -2,11 +2,15 @@
  * Desktop bootstrap: one-time nonce delivered through the URL fragment,
  * HttpOnly cookie for /api. Neither the token nor the nonce appears in any
  * response body, so reaching the loopback port is not enough to obtain one.
+ * The cookie gates the whole `/api` namespace through the webserver admission
+ * guard rather than through each route's own handler, so a plugin's `/api`
+ * routes are authenticated without that plugin implementing anything.
  */
 
 import { timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { hasValidDesktopToken } from '@deepseek-ai/dsh-client-connection'
+import type { WebRequestGuard } from '@deepseek-ai/dsh-host-webserver'
 
 /** Index global holding the one-time bootstrap nonce. */
 export const DESKTOP_BOOTSTRAP_MARK = '__DSH_DESKTOP_BOOTSTRAP__'
@@ -273,23 +277,54 @@ export function isApiNamespace(path: string): boolean {
 }
 
 /**
- * Fail closed when anything other than connection owns an `/api` route.
+ * The desktop admission guard: in desktop mode every `/api` request and
+ * upgrade must carry the launch token, whoever registered the route.
+ *
+ * A route-level check cannot carry this rule, because `match()` gives an exact
+ * route precedence over the connection plugin's `/api` prefix: a third-party
+ * exact route would answer before the only handler that reads the token, on a
+ * loopback port that carries no user identity. Guarding the server instead
+ * lets a plugin serve its own `/api` namespace without opening one.
+ *
+ * Requests outside `/api` are admitted, which leaves the bootstrap routes
+ * (`/__dshd_bootstrap` issues the cookie, so it cannot present one) and dist
+ * serving on their own checks.
+ *
+ * @param session - live bootstrap session holding this launch's token.
+ * @returns the guard, refusing an unauthenticated `/api` request with 401.
+ */
+export function desktopApiGuard(session: DesktopBootstrap): WebRequestGuard {
+  return (req, pathname) => {
+    if (!isApiNamespace(pathname)) return undefined
+    return hasValidDesktopToken(req, session.token) ? undefined : 401
+  }
+}
+
+/**
+ * Describe the live `/api` routes the connection plugin does not own.
+ *
+ * They are served, and {@link desktopApiGuard} authenticates them like every
+ * other `/api` route. The report exists because precedence still matters: an
+ * exact route wins over the connection prefix, so one whose path collides with
+ * an RPC method name replaces that method for the whole launch.
  *
  * @param registrations - snapshot from `webServer.listRegistrations()`.
+ * @returns the diagnostic naming each foreign route and its owner, or undefined when there is none.
  */
-export function assertDesktopApiExclusive(
+export function describeForeignApiRoutes(
   registrations: readonly { kind: string; path: string; owner: string }[],
-): void {
-  const offenders = registrations.filter(entry =>
+): string | undefined {
+  const foreign = registrations.filter(entry =>
     (entry.kind === 'exact' || entry.kind === 'prefix' || entry.kind === 'upgrade')
     && isApiNamespace(entry.path)
     && entry.owner !== CONNECTION_ROUTE_OWNER,
   )
-  if (offenders.length === 0) return
-  const detail = offenders
+  if (foreign.length === 0) return undefined
+  const detail = foreign
     .map(entry => `${entry.kind} ${entry.path} owner=${entry.owner}`)
     .join(', ')
-  throw new Error(`web-app: desktop mode refuses extra /api registrations: ${detail}`)
+  return `web-app: /api routes owned by other plugins are served ahead of the connection prefix (${detail}); `
+    + 'the desktop launch token still gates them, but an exact path matching an RPC method would replace it'
 }
 
 function readLimitedBody(req: IncomingMessage, limit: number): Promise<string> {

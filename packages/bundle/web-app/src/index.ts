@@ -22,9 +22,10 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-shell-env'
 import {
-  assertDesktopApiExclusive,
   BOOTSTRAP_PATH,
   DesktopBootstrap,
+  describeForeignApiRoutes,
+  desktopApiGuard,
   handleDesktopBootstrap,
   handleDesktopReady,
   handleDesktopStatus,
@@ -163,6 +164,12 @@ export function apply(ctx: Context, config: Config): void {
   ctx.provide(WEB_RUNTIME_SERVICE, runtime)
   const desktop = desktopBootstrapFromStartup(ctx)
   if (desktop !== undefined) {
+    // Server-wide, so every `/api` route is authenticated — including the ones
+    // patch-layer plugins register, which the connection plugin never sees.
+    ctx.effect(
+      () => ctx.webServer.registerGuard(desktopApiGuard(desktop)),
+      'web-app: desktop /api guard',
+    )
     ctx.effect(
       () => ctx.webServer.tapIndex(html => injectDesktopBootstrapScript(html)),
       'web-app: desktop bootstrap',
@@ -224,7 +231,13 @@ export function apply(ctx: Context, config: Config): void {
     // reading the torn-down port would turn a clean shutdown into a crash.
     if (ctx.get('webServer') === undefined) return
     if (desktop !== undefined) {
-      assertDesktopApiExclusive(ctx.webServer.listRegistrations())
+      // Diagnostic, not a fence: the guard already authenticates these routes,
+      // so a plugin that adds one must not be able to fail the whole launch.
+      // On stderr, which the desktop shell tees into its sidecar log, because
+      // stdout carries the readiness line and this composition mounts no
+      // logger exporter that would print a `ctx.logger` message anywhere.
+      const foreign = describeForeignApiRoutes(ctx.webServer.listRegistrations())
+      if (foreign !== undefined) console.warn(foreign)
     }
     if (config.printUrl) printUrl()
   }
