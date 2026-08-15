@@ -13,6 +13,10 @@
     "core:window:allow-minimize",
     "core:window:allow-unminimize",
     "allow-open-log-directory",
-    "updater:default"
+    "updater:default",
+    "notification:default",
+    "notification:allow-notify",
+    "notification:allow-is-permission-granted",
+    "notification:allow-request-permission"
   ]
 }

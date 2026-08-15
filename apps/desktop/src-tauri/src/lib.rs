@@ -3,6 +3,7 @@
 //! Tauri is a thin host. Sidecar spawn, ready-line parsing, health checks,
 //! process-tree shutdown, and bind safety live in injectable modules.
 
+mod attention;
 mod env;
 mod health;
 mod http;
@@ -81,6 +82,7 @@ const READY_TIMEOUT: Duration = Duration::from_secs(15);
 /// Launch the desktop shell.
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
@@ -90,13 +92,17 @@ pub fn run() {
             }
         }))
         .manage(std::sync::Arc::new(update::UpdateState::new()))
+        .manage(attention::AttentionState::new())
         .manage(AppState {
             supervisor: SidecarSupervisor::new(),
             boot: Mutex::new(None),
             home: Mutex::new(None),
             _lock: Mutex::new(None),
         })
-        .invoke_handler(tauri::generate_handler![open_log_directory])
+        .invoke_handler(tauri::generate_handler![
+            open_log_directory,
+            attention::notify_attention
+        ])
         .setup(|app| {
             install_tray(app.handle())?;
             update::spawn_checker(app.handle().clone());
