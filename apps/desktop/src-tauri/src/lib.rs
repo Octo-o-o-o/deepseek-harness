@@ -17,6 +17,7 @@ mod opener;
 mod overlay;
 mod paths;
 mod pid;
+mod plugins;
 mod process;
 mod ready;
 mod shell_env;
@@ -44,7 +45,8 @@ use crate::migrate::{
 use crate::navigation::is_internal_url;
 use crate::opener::open_external_url;
 use crate::paths::{
-    default_dsh_home, default_workspace_cwd, ensure_desktop_state, resolve_node, resolve_web_bin,
+    default_dsh_home, default_workspace_cwd, ensure_desktop_state, resolve_desktop_patch,
+    resolve_node, resolve_web_bin,
 };
 use crate::pid::{clear_sidecar_pid, reap_stale_sidecar, write_sidecar_pid};
 use crate::shell_env::login_shell_env;
@@ -62,6 +64,9 @@ pub struct AppState {
     boot: Mutex<Option<thread::JoinHandle<()>>>,
     home: Mutex<Option<std::path::PathBuf>>,
     _lock: Mutex<Option<HomeLock>>,
+    /// Profile-manifest stamp taken while launching this sidecar; the running
+    /// composition read its bundle list at that moment.
+    profile_stamp: Mutex<Option<std::time::SystemTime>>,
 }
 
 impl AppState {
@@ -98,9 +103,12 @@ pub fn run() {
             boot: Mutex::new(None),
             home: Mutex::new(None),
             _lock: Mutex::new(None),
+            profile_stamp: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             open_log_directory,
+            plugins_pending_restart,
+            restart_for_plugins,
             attention::notify_attention
         ])
         .setup(|app| {
@@ -228,6 +236,13 @@ fn boot_and_navigate(
         let mut guard = state.home.lock().map_err(|err| err.to_string())?;
         *guard = Some(home.clone());
     }
+    // Taken before the sidecar starts, so a manifest rewritten while it boots
+    // reads as pending rather than being folded into this composition.
+    {
+        let stamp = plugins::manifest_stamp(&plugins::profile_manifest_path(&home));
+        let mut guard = state.profile_stamp.lock().map_err(|err| err.to_string())?;
+        *guard = stamp;
+    }
     // Rotate only after the lock is held: a second instance must not rotate
     // the first instance's live log before it is turned away.
     rotate_sidecar_log(&home.join("logs/sidecar.log")).map_err(|err| err.to_string())?;
@@ -258,9 +273,15 @@ fn boot_and_navigate(
             ));
         }
     }
+    // The desktop-only patch layer rides above the profile's own, so rows that
+    // belong to the packaged application never reach `npx @deepseek-ai/dsh web`.
+    let extra = match resolve_desktop_patch(exe, cwd) {
+        Some(patch) => vec!["--patch".to_string(), patch.to_string_lossy().into_owned()],
+        None => Vec::new(),
+    };
     let spec = SidecarSpec {
         program: node,
-        args: desktop_web_args(&bin, &[]),
+        args: desktop_web_args(&bin, &extra),
         cwd: workspace,
         env,
         login_env: login_shell_env(),
@@ -320,6 +341,15 @@ fn boot_and_navigate(
         return Err(err.to_string());
     }
     phase = transition(phase, BootEvent::HostDescribed);
+    // The sidecar page is a remote origin to Tauri, so it reaches no command
+    // until a capability names it. The port is OS-assigned, hence a runtime
+    // registration of this exact origin rather than a wildcard in the static
+    // capability: authorizing every port on loopback would hand these commands
+    // to any local process that can bind one.
+    if let Err(err) = grant_sidecar_capability(handle, port) {
+        state.request_stop();
+        return Err(err);
+    }
     if let Err(err) = navigate_to_sidecar(window, port, &nonce) {
         state.request_stop();
         return Err(err);
@@ -352,6 +382,67 @@ const SIDECAR_POLL: Duration = Duration::from_secs(2);
 #[tauri::command]
 fn open_log_directory() -> Result<(), String> {
     open_logs_dir(&default_dsh_home()).map_err(|err| err.to_string())
+}
+
+/// Let the sidecar page at `port` reach the plugin-restart commands.
+///
+/// Scoped to the two commands the page needs and to this launch's exact
+/// origin. Nothing else in the shell's command surface becomes reachable, and
+/// the grant dies with the process that issued it.
+///
+/// # Parameters
+/// - `app`: Tauri app handle owning the runtime ACL.
+/// - `port`: the sidecar's bound loopback port.
+///
+/// # Returns
+/// `Ok(())` once the capability is registered.
+fn grant_sidecar_capability(app: &AppHandle, port: u16) -> Result<(), String> {
+    let capability = format!(
+        r#"{{
+          "identifier": "sidecar-plugin-restart",
+          "description": "Plugin-restart commands for this launch's sidecar origin.",
+          "windows": ["main"],
+          "remote": {{ "urls": ["http://127.0.0.1:{port}"] }},
+          "permissions": ["allow-plugins-pending-restart", "allow-restart-for-plugins"]
+        }}"#
+    );
+    app.add_capability(capability)
+        .map_err(|err| format!("desktop: sidecar capability registration failed: {err}"))
+}
+
+/// Whether the profile gained or lost plugins since this sidecar composed.
+///
+/// The page polls this to decide whether to offer a restart. An unknown state
+/// answers `false`: an unusable stamp must not put a permanent banner in front
+/// of someone who never installed a plugin.
+#[tauri::command]
+fn plugins_pending_restart(state: tauri::State<'_, AppState>) -> bool {
+    let Ok(home) = state.home.lock() else {
+        return false;
+    };
+    let Some(home) = home.as_ref() else {
+        return false;
+    };
+    let Ok(booted) = state.profile_stamp.lock() else {
+        return false;
+    };
+    plugins::changed_since_boot(
+        *booted,
+        plugins::manifest_stamp(&plugins::profile_manifest_path(home)),
+    )
+}
+
+/// Restart the application so the composition re-reads the profile manifest.
+///
+/// Stops the sidecar through the same entry a quit takes, so the child never
+/// outlives the shell and its data directory lock is released before the new
+/// process asks for it. `restart` replaces this process and does not return.
+#[tauri::command]
+fn restart_for_plugins(app: AppHandle) {
+    if let Some(state) = app.try_state::<AppState>() {
+        state.request_stop();
+    }
+    app.restart();
 }
 
 /// Test injection point named by `DSH_DESKTOP_BOOT_FAIL`: `client-ready`

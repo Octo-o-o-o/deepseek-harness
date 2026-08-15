@@ -1,0 +1,15 @@
+# Desktop-only patch layer, passed to the sidecar as `--patch` by the shell.
+#
+# It rides above the profile's own patch file, so it activates rows the shared
+# web bundle deliberately does not carry: those belong to the packaged
+# application, not to `npx @deepseek-ai/dsh web`. Keeping them here instead of
+# in the bundle's cordis.patch.yml also keeps this fork's diff against upstream
+# confined to files upstream does not have.
+
+- insert:
+    # Offers a restart once the profile's plugin list has moved away from what
+    # this composition read at boot. Only the shell can detect that (it stamped
+    # the manifest when it launched the sidecar) and only the shell can act on
+    # it, so the plugin is inert outside the packaged application.
+    - id: ui-plugin-restart
+      name: '@deepseek-ai/dsh-client-ui-plugin-restart'

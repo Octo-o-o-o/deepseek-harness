@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-plugins-pending-restart"
+description = "Report whether the profile gained or lost plugins since this sidecar composed."
+commands.allow = ["plugins_pending_restart"]
+
+[[permission]]
+identifier = "allow-restart-for-plugins"
+description = "Restart the application so the composition re-reads the profile manifest."
+commands.allow = ["restart_for_plugins"]

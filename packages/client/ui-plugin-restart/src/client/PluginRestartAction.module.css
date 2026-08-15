@@ -1,0 +1,100 @@
+/* The action sits beside Settings, so it inherits the sidebar foot's rhythm
+   rather than introducing chrome of its own. */
+.action {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--dsh-color-border, rgb(0 0 0 / 12%));
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsh-color-text, inherit);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.action:hover {
+  background: var(--dsh-color-surface-hover, rgb(0 0 0 / 5%));
+}
+
+/* Fixed to the viewport: the action lives in a narrow column, and a
+   confirmation that scrolls with it would be clipped by the sidebar. */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 40%);
+}
+
+.panel {
+  max-width: 30rem;
+  padding: 1.25rem;
+  border-radius: 12px;
+  background: var(--dsh-color-surface, #fff);
+  color: var(--dsh-color-text, inherit);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 24%);
+}
+
+.title {
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+}
+
+.body {
+  margin: 0 0 1rem;
+  color: var(--dsh-color-text-muted, inherit);
+  line-height: 1.5;
+}
+
+.failure {
+  margin: 0 0 0.75rem;
+  color: var(--dsh-color-danger, #c0392b);
+}
+
+.buttons {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.cancel,
+.accept {
+  padding: 6px 14px;
+  border-radius: 8px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.cancel {
+  border: 1px solid var(--dsh-color-border, rgb(0 0 0 / 12%));
+  background: transparent;
+  color: inherit;
+}
+
+.accept {
+  border: 1px solid transparent;
+  background: var(--dsh-color-accent, #2f6feb);
+  color: #fff;
+}
+
+/* 56px rail: the label would not fit, so the control shrinks to its glyph and
+   keeps the full text as its accessible name. */
+.rail {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin: 0 auto;
+  border: 1px solid var(--dsh-color-border, rgb(0 0 0 / 12%));
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsh-color-text, inherit);
+  font: inherit;
+  cursor: pointer;
+}
+
+.rail:hover {
+  background: var(--dsh-color-surface-hover, rgb(0 0 0 / 5%));
+}

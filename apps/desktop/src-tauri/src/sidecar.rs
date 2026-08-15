@@ -72,22 +72,25 @@ pub enum SidecarError {
 
 /// Build the production `dsh web --port 0 --host 127.0.0.1` argument list.
 ///
+/// Launcher flags must precede the pinned ones: `dsh` treats everything from
+/// the first app flag onward as the app's own argv, so a `--patch` placed
+/// after `--port` reaches the web app, which rejects it as unknown.
+///
 /// # Parameters
 /// - `bin_js`: absolute path to `apps/cli/lib/bin.js`.
-/// - `extra`: extra argv after the pinned loopback flags (secrets go in env, not here).
+/// - `launcher`: launcher flags such as `--patch <file>` (secrets go in env, not here).
 ///
 /// # Returns
 /// Argv after the `node` program.
-pub fn desktop_web_args(bin_js: &Path, extra: &[String]) -> Vec<String> {
-    let mut args = vec![
-        bin_js.to_string_lossy().into_owned(),
-        "web".into(),
-        "--port".into(),
+pub fn desktop_web_args(bin_js: &Path, launcher: &[String]) -> Vec<String> {
+    let mut args = vec![bin_js.to_string_lossy().into_owned(), "web".into()];
+    args.extend(launcher.iter().cloned());
+    args.extend([
+        "--port".to_string(),
         "0".into(),
         "--host".into(),
         "127.0.0.1".into(),
-    ];
-    args.extend(extra.iter().cloned());
+    ]);
     args
 }
 
@@ -498,6 +501,25 @@ mod tests {
             vec![
                 "/tmp/bin.js".to_string(),
                 "web".into(),
+                "--port".into(),
+                "0".into(),
+                "--host".into(),
+                "127.0.0.1".into(),
+            ]
+        );
+        // Launcher flags sit between the subcommand and the pinned bind flags:
+        // `dsh` hands everything from the first app flag onward to the app.
+        let patched = desktop_web_args(
+            Path::new("/tmp/bin.js"),
+            &["--patch".to_string(), "/tmp/desktop.patch.yml".to_string()],
+        );
+        assert_eq!(
+            patched,
+            vec![
+                "/tmp/bin.js".to_string(),
+                "web".into(),
+                "--patch".into(),
+                "/tmp/desktop.patch.yml".into(),
                 "--port".into(),
                 "0".into(),
                 "--host".into(),

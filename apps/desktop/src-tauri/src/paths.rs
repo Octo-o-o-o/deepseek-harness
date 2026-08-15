@@ -224,6 +224,37 @@ fn bundled_web_bin(exe: &Path) -> Option<PathBuf> {
     })
 }
 
+/// Locate the desktop-only patch layer shipped beside the sidecar payload.
+///
+/// The layer activates rows that belong to the packaged application rather
+/// than to `npx @deepseek-ai/dsh web`, so a missing file is not an error: a
+/// source checkout that never packaged one still boots, just without those
+/// rows.
+///
+/// # Parameters
+/// - `exe`: the running executable's path.
+/// - `cwd`: process working directory, used by the source-checkout fallback.
+///
+/// # Returns
+/// The patch path when one exists.
+pub fn resolve_desktop_patch(exe: &Path, cwd: &Path) -> Option<PathBuf> {
+    for resources in resource_dirs(exe) {
+        let candidate = resources.join("desktop.patch.yml");
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    for start in [exe.to_path_buf(), cwd.to_path_buf()] {
+        if let Some(root) = find_repo_root(&start) {
+            let candidate = root.join("apps/desktop/desktop.patch.yml");
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
 fn resource_dirs(exe: &Path) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     if let Some(macos) = macos_resource_dir(exe) {

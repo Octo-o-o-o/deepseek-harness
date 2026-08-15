@@ -54,7 +54,8 @@
       "../sidecar/dist/bin": "bin",
       "../sidecar/dist/app": "app",
       "../../../LICENSE": "LICENSE",
-      "../../../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
+      "../../../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md",
+      "../desktop.patch.yml": "desktop.patch.yml"
     }
   }
 }
