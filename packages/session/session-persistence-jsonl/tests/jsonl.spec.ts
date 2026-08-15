@@ -1619,3 +1619,100 @@ describe('JsonlSessionPersistence: edge cases', () => {
   })
 
 })
+
+describe('single-writer containment', () => {
+  const live: Context[] = []
+
+  afterEach(async () => {
+    for (const ctx of live.splice(0)) await ctx.fiber.dispose()
+  })
+
+  /** A backend instance standing in for a separate process over the same home. */
+  async function writer(root: string): Promise<JsonlSessionPersistence> {
+    const ctx = new Context()
+    live.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
+    return ctx.sessionPersistence as JsonlSessionPersistence
+  }
+
+  it('refuses the append that would duplicate a seq another writer already committed', async () => {
+    const root = await freshRoot()
+    const first = await writer(root)
+    const second = await writer(root)
+    const header = meta('shared')
+    const log = oneTurnLog()
+
+    await first.appendBatch(header, log.slice(0, 2), false)
+    // Both adopt the same length — the state that previously let both append
+    // from the same seq and corrupt the committed region.
+    await first.loadStored(header.id)
+    await second.loadStored(header.id)
+
+    await first.appendBatch(header, log.slice(2, 3), true)
+    await expect(second.appendBatch(header, log.slice(2, 3), true))
+      .rejects.toThrow(/changed outside this writer/)
+
+    // The first writer's events remain readable: refusing beats appending at a
+    // taken position, which the reader would discard from the duplicate onward.
+    const stored = await first.loadStored(header.id)
+    expect(stored?.events).toEqual(log.slice(0, 3))
+  })
+
+  it('keeps refusing after the first foreign write, because the cursor is no longer trustworthy', async () => {
+    const root = await freshRoot()
+    const first = await writer(root)
+    const second = await writer(root)
+    const header = meta('poisoned')
+    const log = oneTurnLog()
+
+    await first.appendBatch(header, log.slice(0, 2), false)
+    await second.loadStored(header.id)
+    await first.appendBatch(header, log.slice(2, 3), true)
+
+    await expect(second.appendBatch(header, log.slice(2, 3), true))
+      .rejects.toThrow(/changed outside this writer/)
+    // Even though the second writer could now re-read the file, its coordinator
+    // cursor still points at the old position.
+    await expect(second.appendBatch(header, log.slice(2, 3), true))
+      .rejects.toThrow(/already modified this log/)
+  })
+
+  it('leaves other sessions writable, so one conflict does not stop the home', async () => {
+    const root = await freshRoot()
+    const first = await writer(root)
+    const second = await writer(root)
+    const contested = meta('contested')
+    const own = meta('own')
+    const log = oneTurnLog()
+
+    await first.appendBatch(contested, log.slice(0, 2), false)
+    await second.loadStored(contested.id)
+    await first.appendBatch(contested, log.slice(2, 3), true)
+    await expect(second.appendBatch(contested, log.slice(2, 3), true)).rejects.toThrow()
+
+    await second.appendBatch(own, log.slice(0, 2), false)
+    expect((await second.loadStored(own.id))?.events).toEqual(log.slice(0, 2))
+  })
+
+  it('refuses a repair whose truncation offset now points into another writer data', async () => {
+    const root = await freshRoot()
+    const first = await writer(root)
+    const second = await writer(root)
+    const header = meta('repair-race')
+    const log = oneTurnLog()
+
+    await first.appendBatch(header, log.slice(0, 2), false)
+    const adopted = await second.loadStored(header.id)
+    await first.appendBatch(header, log.slice(2, 3), true)
+
+    // The offset came from the log the second writer read; applying it now
+    // would delete what the first writer committed since.
+    await expect(second.commitRepair(
+      header,
+      { truncateTo: adopted!.committedBytes ?? 0, recoveredEvents: [] },
+      [],
+    )).rejects.toThrow(/changed outside this writer/)
+    expect((await first.loadStored(header.id))?.events).toEqual(log.slice(0, 3))
+  })
+})

@@ -9,7 +9,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { readdirSync } from 'node:fs'
-import { open, mkdir, readFile, readdir, realpath, link, rm, stat, truncate } from 'node:fs/promises'
+import { open, mkdir, readFile, readdir, realpath, link, rm, stat } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { scheduler } from 'node:timers/promises'
@@ -96,6 +96,29 @@ interface FileRevisionIdentity {
   readonly ctimeNs: bigint
 }
 
+/**
+ * What this backend last left on disk for one session, so a write can tell
+ * whether anything else touched the log since.
+ *
+ * The seam requires one live writer per session, but nothing enforced it: two
+ * backend instances could adopt the same length, both append from the same
+ * `seq`, and both succeed — the reader then rejects the duplicate `seq` as a
+ * corrupt committed region and drops everything after it. `dev`/`ino` catch a
+ * replaced file; `size` catches an append or truncation by anyone else.
+ */
+interface SessionWriteOwnership {
+  readonly dev: bigint
+  readonly ino: bigint
+  /** Byte length this backend expects to find, updated after each own write. */
+  size: bigint
+  /**
+   * Set once a foreign write is observed. The in-memory cursor can no longer be
+   * trusted against the file, so every later write for this session is refused
+   * rather than appended at a position that may already be taken.
+   */
+  poisoned: boolean
+}
+
 /** Build the source-qualified revision shared by full and lightweight reads. */
 function fileRevision(identity: FileRevisionIdentity): PersistenceRevision {
   return SessionPersistenceRevision([
@@ -144,6 +167,8 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
   private compression: JsonlCompression
   private coordinator: PersistenceCoordinator<JsonlTornMarker>
   private rootEncodingCheck: Promise<void> | undefined
+  /** Per-session on-disk state this backend believes it owns; see {@link SessionWriteOwnership}. */
+  private readonly ownership = new Map<SessionId, SessionWriteOwnership>()
 
   constructor(ctx: Context, public config: Config) {
     super(ctx)
@@ -292,15 +317,67 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
   private async readStableFile(
     path: string,
     signal?: AbortSignal,
-  ): Promise<{ buffer: Buffer; revision: PersistenceRevision }> {
+  ): Promise<{ buffer: Buffer; revision: PersistenceRevision; identity: FileRevisionIdentity }> {
     for (;;) {
       signal?.throwIfAborted()
       const before = fileRevision(await stat(path, { bigint: true }))
       const buffer = await readFile(path, { signal })
       signal?.throwIfAborted()
-      const after = fileRevision(await stat(path, { bigint: true }))
-      if (before === after) return { buffer, revision: after }
+      const afterStat = await stat(path, { bigint: true })
+      const after = fileRevision(afterStat)
+      if (before === after) return { buffer, revision: after, identity: afterStat }
     }
+  }
+
+  /**
+   * Record the on-disk state this backend now owns for `id`. Called wherever
+   * this backend has just observed the whole file or just produced it, so a
+   * later write can detect anything that changed the log in between.
+   *
+   * @param id - session whose log this state describes.
+   * @param identity - stat of the log at that moment.
+   */
+  private takeWriteOwnership(id: SessionId, identity: FileRevisionIdentity): void {
+    this.ownership.set(id, {
+      dev: identity.dev,
+      ino: identity.ino,
+      size: identity.size,
+      poisoned: false,
+    })
+  }
+
+  /**
+   * Refuse an append when the log is not where this backend left it.
+   *
+   * The seam permits one live writer per session. A second writer that adopted
+   * the same length would append from a `seq` the first writer has already
+   * committed, and the reader treats a duplicate `seq` as a corrupt committed
+   * region — dropping every later event. Refusing here keeps that damage from
+   * being written at all, and the refusal names the other writer so the user
+   * can close it rather than seeing a truncated history later.
+   *
+   * @param id - session about to be appended to.
+   * @param observed - stat of the open log handle.
+   * @throws when another writer changed the log, or after that has happened once.
+   */
+  private assertWriteOwnership(id: SessionId, observed: FileRevisionIdentity): void {
+    const owned = this.ownership.get(id)
+    if (owned === undefined) return
+    if (owned.poisoned) {
+      throw new Error(
+        `session "${id}": refusing to write because another process already modified this log; `
+        + 'reopen the session to continue',
+      )
+    }
+    if (owned.dev === observed.dev && owned.ino === observed.ino && owned.size === observed.size) return
+    owned.poisoned = true
+    throw new Error(
+      `session "${id}": the log changed outside this writer `
+      + `(expected ${owned.size} bytes at dev ${owned.dev}/ino ${owned.ino}, `
+      + `found ${observed.size} bytes at dev ${observed.dev}/ino ${observed.ino}); `
+      + 'another dsh instance has the same session open — the desktop app and the CLI share ~/.dsh. '
+      + 'Refusing to append so the other writer\'s committed events stay readable',
+    )
   }
 
   /**
@@ -312,7 +389,11 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     expectedId?: SessionId,
     signal?: AbortSignal,
   ): Promise<StoredPrefix<JsonlTornMarker>> {
-    const { buffer, revision } = await this.readStableFile(path, signal)
+    const { buffer, revision, identity } = await this.readStableFile(path, signal)
+    // Adopting the stored log makes this backend the writer for it. Recording
+    // the state read here — not the state seen at the first append — is what
+    // lets a second adopter notice that the first one already appended.
+    if (expectedId !== undefined) this.takeWriteOwnership(expectedId, identity)
     let prefix: Omit<StoredPrefix<JsonlTornMarker>, 'revision'>
     try {
       if (this.compression === 'zstd') {
@@ -523,6 +604,10 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     } else {
       await this.materializePosix(project, dir, finalPath, meta.id, content)
     }
+    // Publishing the log makes this backend its writer; both platform paths
+    // refuse to replace an existing file, so reaching here means this process
+    // created it.
+    this.takeWriteOwnership(meta.id, await stat(finalPath, { bigint: true }))
   }
 
   /* v8 ignore start -- Windows uses the Win32 durable-publish path; POSIX coverage exercises this peer. */
@@ -660,10 +745,18 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     }
 
     try {
-      const { size: before } = await handle.stat()
+      const observed = await handle.stat({ bigint: true })
+      // Before writing, not after: an append at a position another writer has
+      // already taken is what produces a duplicate seq, and the reader discards
+      // everything past the first duplicate.
+      this.assertWriteOwnership(meta.id, observed)
+      const before = Number(observed.size)
       try {
         await handle.writeFile(content)
         await handle.sync()
+        // Re-stat rather than adding the encoded length: the file is the
+        // authority, and compression makes the written length non-obvious.
+        this.takeWriteOwnership(meta.id, await handle.stat({ bigint: true }))
       } catch (error) {
         try {
           await closeAppendHandle()
@@ -691,10 +784,16 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
   /** Truncate the log file to `offset` bytes and fsync (discard the crash tail). */
   private async repair(meta: SessionHeader, offset: number): Promise<void> {
     const path = logPath(this.root, meta.cwd, meta.id, this.compression)
-    await truncate(path, offset)
     const handle = await open(path, 'r+')
     try {
+      // Truncation is destructive and the offset was computed from the log this
+      // backend read. If anyone appended since, that offset now points into
+      // their data, so the ownership check must gate the truncate — and it runs
+      // on the same handle to keep the window as small as the syscalls allow.
+      this.assertWriteOwnership(meta.id, await handle.stat({ bigint: true }))
+      await handle.truncate(offset)
       await handle.sync()
+      this.takeWriteOwnership(meta.id, await handle.stat({ bigint: true }))
     } finally {
       await handle.close()
     }
