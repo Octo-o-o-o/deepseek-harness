@@ -14,7 +14,7 @@ Status: implemented
 
 首启只在 `~/.dsh` 既没有 `migration-state.json`、**也**没有那些目录时，才从统一前的桌面目录（`~/Library/Application Support/DeepSeekHarness`、`%APPDATA%\DeepSeekHarness` 或 `DSH_LEGACY_HOME`）复制 `sessions`、`settings`、`attachments`、`storages`、`profiles`：已有真实 CLI 数据的目录具有权威性，绝不被覆盖。凭据不复制。目录里已有的文件先快照到 `migration-backup-<ts>`；`DSH_DESKTOP_MIGRATE_FAIL=1` 或任何拷贝错误会恢复该快照且不写 marker。
 
-`desktop.lock` 是仅由壳持有的排他 `flock`（Windows 为 `share_mode(0)`，未在本机验证），因此它排斥第二个 `dshd`，而不排斥 CLI 服务。`sidecar.pid` 同时记录 sidecar 的进程号**与**启动它的入口脚本，下次启动只在存活进程的命令行仍指向该脚本时才回收它：在共享目录里，仅凭进程号会在 pid 复用后授权杀死用户自己启动的 `dsh web`。`desktop-state.json` 记住 sidecar 的 cwd。`logs/sidecar.log` 在 50MB 时轮转；panic 追加到 `logs/crash.log`。
+`desktop.lock` 是仅由壳持有的排他 `flock`（Windows 为全共享打开加 `LockFileEx` 字节范围锁，已在真实 Windows 主机验证），因此它排斥第二个 `dshd`，而不排斥 CLI 服务。`sidecar.pid` 同时记录 sidecar 的进程号**与**启动它的入口脚本，下次启动只在存活进程的命令行仍指向该脚本时才回收它：在共享目录里，仅凭进程号会在 pid 复用后授权杀死用户自己启动的 `dsh web`。`desktop-state.json` 记住 sidecar 的 cwd。`logs/sidecar.log` 在 50MB 时轮转；panic 追加到 `logs/crash.log`。
 
 ## 考虑过的替代方案
 

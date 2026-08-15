@@ -20,4 +20,4 @@ The Stage A shell stopped the sidecar from the tray, ctrlc, `RunEvent::Exit`, an
 
 ## Consequences
 
-Tray, ctrlc, and Exit share one path. Tests cover idempotent stop, ready-line garbage, HTTP 4MB cap, and pid-file bookkeeping. Windows Job Object assignment stays unverified on this machine.
+Tray, ctrlc, and Exit share one path. Tests cover idempotent stop, ready-line garbage, HTTP 4MB cap, and pid-file bookkeeping. Windows Job Object assignment was later verified on a real Windows host: force-killing the shell takes the sidecar's process tree with it, and the next launch reaps the stale record and rewrites the pid file.

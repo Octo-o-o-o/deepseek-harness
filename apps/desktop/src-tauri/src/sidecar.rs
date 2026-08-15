@@ -111,7 +111,6 @@ pub fn spawn_sidecar(spec: &SidecarSpec) -> Result<SpawnedSidecar, SidecarError>
         .stderr(Stdio::piped());
     apply_sidecar_env(&mut command, &spec.login_env, &spec.env);
     hide_child_console(&mut command);
-    hide_child_console(&mut command);
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;

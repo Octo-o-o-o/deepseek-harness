@@ -111,7 +111,8 @@ pub unsafe fn kill_process_group(pgid: i32, sig: i32) -> std::io::Result<()> {
 pub struct ChildTree<'a> {
     /// The spawned sidecar process, which leads its own process group.
     pub child: &'a mut std::process::Child,
-    /// Windows Job Object assigned at spawn. Not locally verified.
+    /// Windows Job Object assigned at spawn; verified on a real Windows host
+    /// (killing the shell takes the sidecar's whole tree down with it).
     #[cfg(windows)]
     pub job: Option<&'a crate::job::JobObject>,
 }

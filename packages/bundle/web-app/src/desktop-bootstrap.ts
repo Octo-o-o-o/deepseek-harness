@@ -49,7 +49,7 @@ export class DesktopBootstrap {
 
   /**
    * @param token - per-launch token written only into Set-Cookie.
-   * @param nonce - one-time nonce injected into the index.
+   * @param nonce - one-time nonce the shell hands the page in the URL fragment.
    * @param ttlMs - consume window from {@link DesktopBootstrap.createdAt}.
    * @param createdAt - epoch ms when the session started.
    */

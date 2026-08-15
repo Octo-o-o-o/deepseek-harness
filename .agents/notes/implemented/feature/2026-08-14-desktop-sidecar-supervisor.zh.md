@@ -20,4 +20,4 @@ Stage A 的壳会从托盘、ctrlc、`RunEvent::Exit` 和 `Drop` 同时停 sidec
 
 ## 后果
 
-托盘、ctrlc 和 Exit 共用一条路径。测试覆盖幂等停止、就绪行垃圾、HTTP 4MB 上限和 pid 文件记账。Windows Job Object 指派在本机仍未验证。
+托盘、ctrlc 和 Exit 共用一条路径。测试覆盖幂等停止、就绪行垃圾、HTTP 4MB 上限和 pid 文件记账。Windows Job Object 指派其后已在真实 Windows 主机验证：强杀壳会连带结束 sidecar 的整棵进程树，下次启动会回收陈旧记录并重写 pid 文件。
