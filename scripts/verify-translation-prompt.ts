@@ -25,7 +25,10 @@ try {
   const document = read('docs/i18n/translation-prompt.md')
   const terminology = read('docs/i18n/terminology.md')
   const examplePaths = [
-    ['README.md', 'README.zh.md'],
+    // The repository root README is excluded from pairing (this fork ships a
+    // Chinese-first README.md with an English README.en.md), so it can no
+    // longer stand in as a paired example here.
+    ['docs/architecture.md', 'docs/architecture.zh.md'],
     ['docs/development.md', 'docs/development.zh.md'],
     ['docs/i18n/README.md', 'docs/i18n/README.zh.md'],
     ['docs/i18n/translation-rules.md', 'docs/i18n/translation-rules.zh.md'],
