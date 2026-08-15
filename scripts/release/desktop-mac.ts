@@ -302,6 +302,31 @@ export function buildEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   )
 }
 
+/** Updater signing inputs, which only the bundle step may see. */
+const UPDATER_SIGNING_VARIABLES = ['TAURI_SIGNING_PRIVATE_KEY', 'TAURI_SIGNING_PRIVATE_KEY_PASSWORD'] as const
+
+/**
+ * The environment for the bundle step: {@link buildEnvironment} plus the
+ * updater signing key.
+ *
+ * `tauri build` signs the updater artifact as it produces it, so this one step
+ * cannot run under the scrubbed environment the other steps use. Widening
+ * {@link buildEnvironment} instead would hand the key to `pnpm build` and to
+ * the sidecar pack, whose `npm install` reaches dependency code; `bundleApp`
+ * runs only `tauri build` and installs nothing, so the exposure stops here.
+ *
+ * @param env - environment the release runs under.
+ * @returns the build environment with the signing variables restored.
+ */
+export function bundleEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const bundle = buildEnvironment(env)
+  for (const name of UPDATER_SIGNING_VARIABLES) {
+    const value = env[name]
+    if (value !== undefined) bundle[name] = value
+  }
+  return bundle
+}
+
 /** Build, sign, notarize and staple the macOS application, then verify the result. */
 export function releaseDesktopMac(): void {
   const plan = assertMacReleaseReady({
@@ -323,7 +348,7 @@ export function releaseDesktopMac(): void {
   run('node', ['scripts/pack-sidecar.mjs'], buildEnv, desktopRoot)
   // The bundle step owns the source-path remap every build path needs; see
   // `bundleApp` in pack-sidecar.mjs.
-  run('node', ['scripts/pack-sidecar.mjs', 'bundle'], buildEnv, desktopRoot)
+  run('node', ['scripts/pack-sidecar.mjs', 'bundle'], bundleEnvironment(process.env), desktopRoot)
   run('node', ['scripts/pack-sidecar.mjs', 'embed'], buildEnv, desktopRoot)
 
   // The bundle step owns where the bundle lands, because the explicit build

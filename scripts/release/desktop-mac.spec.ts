@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   assertMacReleaseReady,
   buildEnvironment,
+  bundleEnvironment,
   developerIdApplications,
   machOFiles,
   resolveNotarizationSource,
@@ -118,7 +119,39 @@ describe('assertMacReleaseReady', () => {
   })
 })
 
+describe('bundleEnvironment', () => {
+  it('restores only the updater signing inputs on top of the scrubbed build environment', () => {
+    const bundle = bundleEnvironment({
+      PATH: '/usr/bin',
+      APPLE_KEYCHAIN_PROFILE: 'dsh-notary',
+      DEEPSEEK_API_KEY: 'sk-live',
+      TAURI_SIGNING_PRIVATE_KEY: 'untrusted comment: minisign encrypted secret key',
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: 'pw',
+    })
+    // The signing key reaches `tauri build`, which signs the updater artifact
+    // as it produces it; every other credential stays withheld.
+    expect(bundle).toEqual({
+      PATH: '/usr/bin',
+      TAURI_SIGNING_PRIVATE_KEY: 'untrusted comment: minisign encrypted secret key',
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: 'pw',
+    })
+  })
+
+  it('adds nothing when the release runs without updater signing', () => {
+    expect(bundleEnvironment({ PATH: '/usr/bin', APPLE_ID: 'owner@example.com' }))
+      .toEqual({ PATH: '/usr/bin' })
+  })
+})
+
 describe('buildEnvironment', () => {
+  it('withholds the updater signing key from build and pack, whose npm install reaches dependency code', () => {
+    expect(buildEnvironment({
+      PATH: '/usr/bin',
+      TAURI_SIGNING_PRIVATE_KEY: 'secret',
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: 'pw',
+    })).toEqual({ PATH: '/usr/bin' })
+  })
+
   it('withholds every release credential from build subprocesses', () => {
     const sanitized = buildEnvironment({
       PATH: '/usr/bin',
