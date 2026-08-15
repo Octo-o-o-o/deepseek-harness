@@ -306,7 +306,7 @@ fn boot_and_navigate(
         return Err(err.to_string());
     }
     phase = transition(phase, BootEvent::HostDescribed);
-    if let Err(err) = navigate_to_sidecar(window, port) {
+    if let Err(err) = navigate_to_sidecar(window, port, &nonce) {
         state.request_stop();
         return Err(err);
     }
@@ -445,8 +445,28 @@ fn is_sidecar_origin(url: &tauri::Url, port: u16) -> bool {
     url.scheme() == "http" && url.host_str() == Some("127.0.0.1") && url.port() == Some(port)
 }
 
-fn navigate_to_sidecar(window: &tauri::WebviewWindow, port: u16) -> Result<(), String> {
-    let url = format!("http://127.0.0.1:{port}/");
+/// Navigate the main WebView to the sidecar, handing the page its one-time
+/// bootstrap nonce in the URL fragment.
+///
+/// The fragment is the delivery channel because user agents never put it on the
+/// wire: serving the nonce inside the index would instead expose it to every
+/// local process able to reach the loopback port, which carries no user
+/// identity. The page strips it from session history once read.
+///
+/// # Parameters
+/// - `window`: main WebView to navigate.
+/// - `port`: sidecar loopback port.
+/// - `nonce`: one-time bootstrap nonce; hex from [`generate_desktop_token`], so
+///   it needs no percent-encoding.
+///
+/// # Returns
+/// `Ok` once the WebView reports the sidecar origin, otherwise the failure.
+fn navigate_to_sidecar(
+    window: &tauri::WebviewWindow,
+    port: u16,
+    nonce: &str,
+) -> Result<(), String> {
+    let url = format!("http://127.0.0.1:{port}/#dshd-nonce={nonce}");
     let parsed = tauri::Url::parse(&url).map_err(|err| err.to_string())?;
     window.navigate(parsed).map_err(|err| err.to_string())?;
     let deadline = std::time::Instant::now() + Duration::from_secs(15);

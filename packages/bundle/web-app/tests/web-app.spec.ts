@@ -271,7 +271,7 @@ describe('web-app runtime glue', () => {
   })
 
   it('prefixes html that has no head element', () => {
-    expect(injectDesktopBootstrapScript('plain', 'tok')).toMatch(/^<script>window\.__DSH_DESKTOP_BOOTSTRAP__/)
+    expect(injectDesktopBootstrapScript('plain')).toMatch(/^<script>window\.__DSH_DESKTOP_BOOTSTRAP__/)
   })
 
   it('resolves the real built frontend dist through the package exports, failing loud unbuilt', () => {

@@ -1,6 +1,7 @@
 /**
- * Desktop bootstrap: one-time nonce in the index, HttpOnly cookie for /api.
- * The token itself never appears in HTML or renderer-visible JavaScript.
+ * Desktop bootstrap: one-time nonce delivered through the URL fragment,
+ * HttpOnly cookie for /api. Neither the token nor the nonce appears in any
+ * response body, so reaching the loopback port is not enough to obtain one.
  */
 
 import { timingSafeEqual } from 'node:crypto'
@@ -99,27 +100,36 @@ export class DesktopBootstrap {
 }
 
 /**
- * Encode a nonce as a JS expression and escape angle brackets so it cannot
- * close the script element.
+ * URL fragment key carrying the one-time nonce from the shell to the index.
  *
- * @param nonce - raw bootstrap nonce.
- * @returns a JS expression, including surrounding quotes.
+ * The fragment is the delivery channel precisely because user agents never put
+ * it on the wire: the shell navigates to `…/#dshd-nonce=<nonce>`, so the nonce
+ * reaches the page without appearing in any response body. Serving it inside
+ * the index instead would hand it to every local process that can reach the
+ * loopback port, and loopback carries no user identity.
  */
-export function encodeBootstrapNonceLiteral(nonce: string): string {
-  return JSON.stringify(nonce).replaceAll('<', '\\u003c').replaceAll('>', '\\u003e')
-}
+export const BOOTSTRAP_FRAGMENT_KEY = 'dshd-nonce'
 
 /**
- * Inject the desktop bootstrap marker and the onload POST. The token is not
- * written into the page.
+ * Inject the desktop bootstrap reader and the onload POST. Neither the token
+ * nor the nonce is written into the page: the script reads the nonce from the
+ * URL fragment the shell navigated to, then strips it from session history so
+ * it does not survive in the back/forward entry or reach later page scripts.
+ *
+ * An absent fragment yields an empty nonce, which `/__dshd_bootstrap` rejects —
+ * a page opened without the shell gets no cookie rather than a partial session.
  *
  * @param html - index.html body.
- * @param nonce - one-time bootstrap nonce.
  * @returns html with the script inserted after `<head>` or prefixed.
  */
-export function injectDesktopBootstrapScript(html: string, nonce: string): string {
-  const encoded = encodeBootstrapNonceLiteral(nonce)
-  const snippet = `<script>window.${DESKTOP_BOOTSTRAP_MARK}=${encoded};window.${DESKTOP_BOOTSTRAP_DONE}=fetch(${JSON.stringify(BOOTSTRAP_PATH)},{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({nonce:window.${DESKTOP_BOOTSTRAP_MARK}})}).then(function(r){if(!r.ok)throw new Error("desktop bootstrap failed")});</script>`
+export function injectDesktopBootstrapScript(html: string): string {
+  const key = JSON.stringify(BOOTSTRAP_FRAGMENT_KEY)
+  const read = '(function(){var h=location.hash;if(h.charAt(0)==="#")h=h.slice(1);'
+    + `var p=new URLSearchParams(h);var v=p.get(${key});if(v===null)return"";`
+    + `p.delete(${key});var rest=p.toString();`
+    + 'history.replaceState(null,"",location.pathname+location.search+(rest===""?"":"#"+rest));'
+    + 'return v;})()'
+  const snippet = `<script>window.${DESKTOP_BOOTSTRAP_MARK}=${read};window.${DESKTOP_BOOTSTRAP_DONE}=fetch(${JSON.stringify(BOOTSTRAP_PATH)},{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({nonce:window.${DESKTOP_BOOTSTRAP_MARK}})}).then(function(r){if(!r.ok)throw new Error("desktop bootstrap failed")});</script>`
   const head = html.indexOf('<head>')
   if (head === -1) return `${snippet}${html}`
   const insertAt = head + '<head>'.length

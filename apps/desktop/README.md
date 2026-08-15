@@ -105,7 +105,7 @@ The WebView may load the bundled start page and the loopback sidecar. Any other 
 
 ## Token
 
-The shell always generates a per-launch hex token and a bootstrap nonce and injects them as `DSH_DESKTOP_TOKEN` / `DSH_DESKTOP_BOOTSTRAP_NONCE`. The Web index receives only the nonce; `POST /__dshd_bootstrap` sets an HttpOnly `dsh-token` cookie for `/api`. The shell self-check uses `X-DSH-Token` and waits for `/__dshd_status` after the WebView client posts `/__dshd_ready`. The token is not put in argv, the URL, or logs. `dsh web` without those env vars is unchanged.
+The shell always generates a per-launch hex token and a bootstrap nonce and injects them as `DSH_DESKTOP_TOKEN` / `DSH_DESKTOP_BOOTSTRAP_NONCE`. The nonce reaches the page through the navigation URL's fragment (`#dshd-nonce=…`), which user agents never put on the wire, so it appears in no response body; the page strips it from session history once read. Serving it inside the index instead would hand it to any local process able to reach the loopback port, because loopback carries no user identity. `POST /__dshd_bootstrap` then sets an HttpOnly `dsh-token` cookie for `/api`. The shell polls `/__dshd_status` with `X-DSH-Bootstrap` and calls `/api/host.describe` with `X-DSH-Token`, after the WebView client posts `/__dshd_ready`. The token is not put in argv, any URL, or logs. `dsh web` without those env vars is unchanged.
 
 ## Known limits
 

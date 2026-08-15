@@ -105,7 +105,7 @@ WebView 只允许加载内置起始页与回环 sidecar。其余导航一律拒�
 
 ## Token
 
-壳始终生成每次启动独立的十六进制 token 与 bootstrap nonce，并作为 `DSH_DESKTOP_TOKEN` / `DSH_DESKTOP_BOOTSTRAP_NONCE` 注入。Web index 只拿到 nonce；`POST /__dshd_bootstrap` 为 `/api` 设置 HttpOnly 的 `dsh-token` cookie。壳的自检使用 `X-DSH-Token`，并在 WebView 客户端 POST `/__dshd_ready` 之后等待 `/__dshd_status`。token 不会进入 argv、URL 或日志。不带这些环境变量的 `dsh web` 行为不变。
+壳始终生成每次启动独立的十六进制 token 与 bootstrap nonce，并作为 `DSH_DESKTOP_TOKEN` / `DSH_DESKTOP_BOOTSTRAP_NONCE` 注入。nonce 经导航 URL 的 fragment（`#dshd-nonce=…`）送达页面——user agent 从不把 fragment 发上网络，因此它不出现在任何响应体中；页面读取后即将其从会话历史中抹除。若改为写进 index，任何能访问该 loopback 端口的本机进程都能拿到它，因为 loopback 不携带用户身份。随后 `POST /__dshd_bootstrap` 为 `/api` 设置 HttpOnly 的 `dsh-token` cookie。壳以 `X-DSH-Bootstrap` 轮询 `/__dshd_status`，以 `X-DSH-Token` 调用 `/api/host.describe`，二者都在 WebView 客户端 POST `/__dshd_ready` 之后。token 不会进入 argv、任何 URL 或日志。不带这些环境变量的 `dsh web` 行为不变。
 
 ## 已知限制
 

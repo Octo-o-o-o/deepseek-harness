@@ -8,10 +8,10 @@ import vm from 'node:vm'
 import { describe, expect, it } from 'vitest'
 import {
   assertDesktopApiExclusive,
+  BOOTSTRAP_FRAGMENT_KEY,
   BOOTSTRAP_PATH,
   BOOTSTRAP_TTL_MS,
   DesktopBootstrap,
-  encodeBootstrapNonceLiteral,
   handleDesktopBootstrap,
   handleDesktopReady,
   handleDesktopStatus,
@@ -20,17 +20,26 @@ import {
   STATUS_PATH,
 } from '../src/desktop-bootstrap.ts'
 
-function evaluateInjection(html: string): { alertCalls: number; bootstrap: unknown } {
+function evaluateInjection(
+  html: string,
+  hash = '',
+): { alertCalls: number; bootstrap: unknown; rewrittenUrl: string | undefined } {
   const script = /<script>([\s\S]*?)<\/script>/.exec(html)?.[1]
   if (script === undefined) throw new Error('missing injected script')
   let alertCalls = 0
+  let rewrittenUrl: string | undefined
   const window: Record<string, unknown> = {}
   vm.runInNewContext(script, {
     window,
+    URLSearchParams,
+    location: { hash, pathname: '/', search: '' },
+    history: {
+      replaceState: (_state: unknown, _title: unknown, url: string) => { rewrittenUrl = url },
+    },
     fetch: async () => ({ ok: true }),
     alert: () => { alertCalls += 1 },
   })
-  return { alertCalls, bootstrap: window.__DSH_DESKTOP_BOOTSTRAP__ }
+  return { alertCalls, bootstrap: window.__DSH_DESKTOP_BOOTSTRAP__, rewrittenUrl }
 }
 
 describe('desktop /api exclusive audit', () => {
@@ -74,15 +83,51 @@ describe('nonce consume', () => {
 })
 
 describe('script injection', () => {
-  it('JSON-encodes quotes and angle brackets so evaluation cannot run attacker code', () => {
+  it('takes the nonce from the fragment, so the served index carries no secret', () => {
+    const html = injectDesktopBootstrapScript('<head></head>')
+    // The served bytes are identical whatever nonce the launch uses: reaching
+    // the loopback port yields nothing an attacker could exchange for a cookie.
+    expect(html).toBe(injectDesktopBootstrapScript('<head></head>'))
+    expect(html).not.toContain('9f86d081884c7d65')
+    const { bootstrap } = evaluateInjection(html, `#${BOOTSTRAP_FRAGMENT_KEY}=9f86d081884c7d65`)
+    expect(bootstrap).toBe('9f86d081884c7d65')
+    expect(html).not.toContain('__DSH_TOKEN__')
+  })
+
+  it('strips the consumed nonce from session history', () => {
+    const html = injectDesktopBootstrapScript('<head></head>')
+    const { rewrittenUrl } = evaluateInjection(html, `#${BOOTSTRAP_FRAGMENT_KEY}=abc123`)
+    // No fragment survives, so a back/forward entry and any later page script
+    // cannot recover the nonce.
+    expect(rewrittenUrl).toBe('/')
+  })
+
+  it('preserves unrelated fragment state while removing only the nonce', () => {
+    const html = injectDesktopBootstrapScript('<head></head>')
+    const { bootstrap, rewrittenUrl } = evaluateInjection(
+      html,
+      `#view=trajectory&${BOOTSTRAP_FRAGMENT_KEY}=abc123`,
+    )
+    expect(bootstrap).toBe('abc123')
+    expect(rewrittenUrl).toBe('/#view=trajectory')
+  })
+
+  it('yields an empty nonce without a fragment, so a shell-less page gets no cookie', () => {
+    const html = injectDesktopBootstrapScript('<head></head>')
+    const { bootstrap, rewrittenUrl } = evaluateInjection(html, '')
+    expect(bootstrap).toBe('')
+    expect(rewrittenUrl).toBeUndefined()
+  })
+
+  it('treats hostile fragment content as an opaque value rather than code', () => {
     const hostile = "x'*alert(1)*'</script><script>alert(1)"
-    const html = injectDesktopBootstrapScript('<head></head>', hostile)
-    expect(html).not.toContain(hostile)
-    expect(encodeBootstrapNonceLiteral(hostile)).toContain('\\u003c')
-    const { alertCalls, bootstrap } = evaluateInjection(html)
+    const html = injectDesktopBootstrapScript('<head></head>')
+    const { alertCalls, bootstrap } = evaluateInjection(
+      html,
+      `#${BOOTSTRAP_FRAGMENT_KEY}=${encodeURIComponent(hostile)}`,
+    )
     expect(alertCalls).toBe(0)
     expect(bootstrap).toBe(hostile)
-    expect(html).not.toContain('__DSH_TOKEN__')
   })
 })
 

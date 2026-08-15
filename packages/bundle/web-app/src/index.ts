@@ -164,7 +164,7 @@ export function apply(ctx: Context, config: Config): void {
   const desktop = desktopBootstrapFromStartup(ctx)
   if (desktop !== undefined) {
     ctx.effect(
-      () => ctx.webServer.tapIndex(html => injectDesktopBootstrapScript(html, desktop.nonce)),
+      () => ctx.webServer.tapIndex(html => injectDesktopBootstrapScript(html)),
       'web-app: desktop bootstrap',
     )
     ctx.effect(
