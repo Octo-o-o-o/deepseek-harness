@@ -180,6 +180,8 @@ const MACH_O_MAGIC = new Set([0xfeedface, 0xfeedfacf, 0xcefaedfe, 0xcffaedfe, 0x
 
 /** Recorded external package versions and the CLI version this payload carries. */
 const manifestPath = join(desktopRoot, 'payload-manifest.json')
+/** Section key in `payload-manifest.json`; optional dependencies resolve per host. */
+const PLATFORM_KEY = `${process.platform}-${process.arch}`
 
 /**
  * Every package in an installed tree, as `name` → `version`.
@@ -237,6 +239,13 @@ function isLocalPackage(name) {
  * versions turns that into a build failure instead of a silent difference in a
  * signed artifact. `node scripts/pack-sidecar.mjs manifest` records the current
  * resolution deliberately.
+ *
+ * Resolutions are recorded per platform. Optional dependencies differ by host —
+ * a macOS payload carries `@img/sharp-darwin-arm64` where a Windows one carries
+ * `@img/sharp-win32-x64` — so one flat list can only ever be true for the host
+ * that wrote it, and accepting a drift on the second platform would flip the
+ * file and break the first. Each platform therefore owns a complete section,
+ * and both the check and the `manifest` step touch only the running host's.
  * @param {string} nodeModules
  * @param {string} cliVersion
  */
@@ -245,36 +254,50 @@ async function assertPayloadManifest(nodeModules, cliVersion) {
   const external = Object.fromEntries(
     Object.entries(installed).filter(([name]) => !isLocalPackage(name)).sort(([a], [b]) => (a < b ? -1 : 1)),
   )
-  const record = { cli: cliVersion, node: NODE_VERSION, packages: external }
-  if (process.argv[2] === 'manifest') {
-    await writeFile(manifestPath, JSON.stringify(record, null, 2) + '\n')
-    console.log(`pack-sidecar: recorded ${String(Object.keys(external).length)} external package(s) in payload-manifest.json`)
-    return
-  }
-  let recorded
+  /** @type {{cli?: string, node?: string, platforms?: Record<string, Record<string, string>>}} */
+  let recorded = {}
   try {
     recorded = JSON.parse(await readFile(manifestPath, 'utf8'))
   } catch {
-    throw new Error('pack-sidecar: payload-manifest.json is missing; run `node scripts/pack-sidecar.mjs manifest`')
+    if (process.argv[2] !== 'manifest') {
+      throw new Error('pack-sidecar: payload-manifest.json is missing; run `node scripts/pack-sidecar.mjs manifest`')
+    }
+  }
+  if (process.argv[2] === 'manifest') {
+    // Merge, never replace: the other platform's section stays exactly as the
+    // host that recorded it left it.
+    const platforms = { ...recorded.platforms, [PLATFORM_KEY]: external }
+    const record = { cli: cliVersion, node: NODE_VERSION, platforms }
+    await writeFile(manifestPath, JSON.stringify(record, null, 2) + '\n')
+    console.log(`pack-sidecar: recorded ${String(Object.keys(external).length)} external package(s) for ${PLATFORM_KEY} in payload-manifest.json`)
+    return
+  }
+  const platformRecord = recorded.platforms?.[PLATFORM_KEY]
+  if (platformRecord === undefined) {
+    throw new Error(
+      `pack-sidecar: payload-manifest.json has no section for ${PLATFORM_KEY} ` +
+        `(recorded: ${Object.keys(recorded.platforms ?? {}).join(', ') || 'none'}); ` +
+        'run `node scripts/pack-sidecar.mjs manifest` on this platform to record it',
+    )
   }
   const drift = []
   if (recorded.node !== NODE_VERSION) drift.push(`node ${String(recorded.node)} -> ${NODE_VERSION}`)
   if (recorded.cli !== cliVersion) drift.push(`@deepseek-ai/dsh ${String(recorded.cli)} -> ${cliVersion}`)
   for (const [name, version] of Object.entries(external)) {
-    const was = recorded.packages?.[name]
+    const was = platformRecord[name]
     if (was === undefined) drift.push(`+ ${name}@${version}`)
     else if (was !== version) drift.push(`${name} ${was} -> ${version}`)
   }
-  for (const name of Object.keys(recorded.packages ?? {})) {
+  for (const name of Object.keys(platformRecord)) {
     if (external[name] === undefined) drift.push(`- ${name}`)
   }
   if (drift.length > 0) {
     throw new Error(
-      `pack-sidecar: payload differs from payload-manifest.json (${String(drift.length)}): ${drift.slice(0, 10).join(', ')}` +
+      `pack-sidecar: payload differs from payload-manifest.json for ${PLATFORM_KEY} (${String(drift.length)}): ${drift.slice(0, 10).join(', ')}` +
         '\n  Re-run with the `manifest` step to accept the new resolution.',
     )
   }
-  console.log(`pack-sidecar: payload matches payload-manifest.json (${String(Object.keys(external).length)} external package(s))`)
+  console.log(`pack-sidecar: payload matches payload-manifest.json for ${PLATFORM_KEY} (${String(Object.keys(external).length)} external package(s))`)
 }
 
 /**
