@@ -1,7 +1,9 @@
 {
   "identifier": "default",
   "description": "Default desktop shell capability.",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "core:window:allow-show",
@@ -10,6 +12,7 @@
     "core:window:allow-set-focus",
     "core:window:allow-minimize",
     "core:window:allow-unminimize",
-    "allow-open-log-directory"
+    "allow-open-log-directory",
+    "updater:default"
   ]
 }

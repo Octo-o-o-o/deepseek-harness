@@ -24,6 +24,7 @@ mod state;
 mod supervisor;
 mod token;
 mod tray;
+mod update;
 
 use std::path::Path;
 use std::sync::Mutex;
@@ -80,6 +81,7 @@ const READY_TIMEOUT: Duration = Duration::from_secs(15);
 /// Launch the desktop shell.
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.unminimize();
@@ -87,6 +89,7 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
+        .manage(std::sync::Arc::new(update::UpdateState::new()))
         .manage(AppState {
             supervisor: SidecarSupervisor::new(),
             boot: Mutex::new(None),
@@ -96,6 +99,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![open_log_directory])
         .setup(|app| {
             install_tray(app.handle())?;
+            update::spawn_checker(app.handle().clone());
             let signal_handle = app.handle().clone();
             if let Err(err) = ctrlc::set_handler(move || {
                 if let Some(state) = signal_handle.try_state::<AppState>() {
