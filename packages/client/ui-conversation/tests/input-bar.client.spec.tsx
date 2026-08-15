@@ -431,9 +431,9 @@ describe('Enter semantics', () => {
   })
 
   it('keeps the owning placeholder or ordinary guidance when whole-queue steering is unavailable', () => {
-    expect(bench({ running: true }).textarea.placeholder).toBe('给智能体发消息')
-    expect(bench({ queue: [row('q-1')] }).textarea.placeholder).toBe('给智能体发消息')
-    expect(bench({ running: true, queue: [row('q-1')], draft: '消息' }).textarea.placeholder).toBe('给智能体发消息')
+    expect(bench({ running: true }).textarea.placeholder).toBe('给智能体发消息，Shift+Enter 换行')
+    expect(bench({ queue: [row('q-1')] }).textarea.placeholder).toBe('给智能体发消息，Shift+Enter 换行')
+    expect(bench({ running: true, queue: [row('q-1')], draft: '消息' }).textarea.placeholder).toBe('给智能体发消息，Shift+Enter 换行')
     expect(bench({
       running: true,
       queue: [row('q-1')],
@@ -441,7 +441,7 @@ describe('Enter semantics', () => {
         address: { parentSessionId: 'parent' as SessionId, childSessionId: SID, mode: 'continuable' },
         parentAvailable: true,
       },
-    }).textarea.placeholder).toBe('给智能体发消息')
+    }).textarea.placeholder).toBe('给智能体发消息，Shift+Enter 换行')
     expect(bench({
       running: true,
       queue: [row('q-1')],
@@ -453,7 +453,7 @@ describe('Enter semantics', () => {
       running: true,
       queue: [row('q-1')],
       commandMenuOpen: true,
-    }).textarea.placeholder).toBe('给智能体发消息')
+    }).textarea.placeholder).toBe('给智能体发消息，Shift+Enter 换行')
     // The steer hint intentionally outranks the plan placeholder: while it
     // shows, the whole-queue gesture is genuinely available in plan mode.
     expect(bench({
@@ -962,7 +962,7 @@ describe('running and lock semantics', () => {
     const { textarea } = bench({ disabled: true })
     expect(textarea.placeholder).toBe('会话不可用')
     const live = bench()
-    expect(live.textarea.placeholder).toBe('给智能体发消息')
+    expect(live.textarea.placeholder).toBe('给智能体发消息，Shift+Enter 换行')
     const custom = bench({ placeholder: 'Custom placeholder' })
     expect(custom.textarea.placeholder).toBe('Custom placeholder')
   })
@@ -1009,7 +1009,7 @@ describe('running and lock semantics', () => {
     expect(entering.textarea.placeholder).toBe('描述你的任务以生成计划')
     // Pending exit: target is default again.
     const leaving = bench({ plan: { active: true, pending: true } })
-    expect(leaving.textarea.placeholder).toBe('给智能体发消息')
+    expect(leaving.textarea.placeholder).toBe('给智能体发消息，Shift+Enter 换行')
     // Owner placeholder outranks the plan swap.
     const custom = bench({ plan: { active: true, pending: false }, placeholder: 'Custom placeholder' })
     expect(custom.textarea.placeholder).toBe('Custom placeholder')
