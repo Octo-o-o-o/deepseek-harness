@@ -243,6 +243,8 @@ mod tests {
             );
             let _ = stream.write_all(framed.as_bytes());
             let _ = stream.shutdown(std::net::Shutdown::Write);
+            let mut rest = Vec::new();
+            let _ = stream.read_to_end(&mut rest);
         });
         port
     }
