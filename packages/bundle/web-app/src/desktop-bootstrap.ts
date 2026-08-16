@@ -121,8 +121,10 @@ export const BOOTSTRAP_FRAGMENT_KEY = 'dshd-nonce'
  * URL fragment the shell navigated to, then strips it from session history so
  * it does not survive in the back/forward entry or reach later page scripts.
  *
- * An absent fragment yields an empty nonce, which `/__dshd_bootstrap` rejects —
- * a page opened without the shell gets no cookie rather than a partial session.
+ * An absent fragment yields an empty nonce and must not POST: a share-gateway
+ * page has no WebView nonce, and a rejected bootstrap Promise hangs the
+ * connection loop. `__DSH_DESKTOP_BOOTSTRAP_DONE__` resolves immediately so
+ * the page can continue without a `dsh-token` cookie.
  *
  * @param html - index.html body.
  * @returns html with the script inserted after `<head>` or prefixed.
@@ -134,7 +136,28 @@ export function injectDesktopBootstrapScript(html: string): string {
     + `p.delete(${key});var rest=p.toString();`
     + 'history.replaceState(null,"",location.pathname+location.search+(rest===""?"":"#"+rest));'
     + 'return v;})()'
-  const snippet = `<script>window.${DESKTOP_BOOTSTRAP_MARK}=${read};window.${DESKTOP_BOOTSTRAP_DONE}=fetch(${JSON.stringify(BOOTSTRAP_PATH)},{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({nonce:window.${DESKTOP_BOOTSTRAP_MARK}})}).then(function(r){if(!r.ok)throw new Error("desktop bootstrap failed")});</script>`
+  const post = `fetch(${JSON.stringify(BOOTSTRAP_PATH)},{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({nonce:window.${DESKTOP_BOOTSTRAP_MARK}})}).then(function(r){if(!r.ok)throw new Error("desktop bootstrap failed")})`
+  const snippet = `<script>window.${DESKTOP_BOOTSTRAP_MARK}=${read};window.${DESKTOP_BOOTSTRAP_DONE}=window.${DESKTOP_BOOTSTRAP_MARK}?${post}:Promise.resolve();</script>`
+  return insertAfterHead(html, snippet)
+}
+
+/**
+ * Polyfill `crypto.randomUUID` on insecure origins. Desktop LAN HTTP is not a
+ * secure context; `getRandomValues` still exists there. Shared client call
+ * sites stay unchanged.
+ *
+ * @param html - index.html body.
+ * @returns html with the polyfill inserted after `<head>` or prefixed.
+ */
+export function injectRandomUuidPolyfill(html: string): string {
+  const snippet = '<script>(function(){var c=globalThis.crypto;if(!c||typeof c.randomUUID==="function")return;'
+    + 'c.randomUUID=function(){var b=new Uint8Array(16);c.getRandomValues(b);b[6]=b[6]&15|64;b[8]=b[8]&63|128;'
+    + 'var h="";for(var i=0;i<16;i++)h+=(b[i]+256).toString(16).slice(1);'
+    + 'return h.slice(0,8)+"-"+h.slice(8,12)+"-"+h.slice(12,16)+"-"+h.slice(16,20)+"-"+h.slice(20);};})();</script>'
+  return insertAfterHead(html, snippet)
+}
+
+function insertAfterHead(html: string, snippet: string): string {
   const head = html.indexOf('<head>')
   if (head === -1) return `${snippet}${html}`
   const insertAt = head + '<head>'.length
@@ -336,17 +359,29 @@ function readLimitedBody(req: IncomingMessage, limit: number): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
     let size = 0
+    let settled = false
     req.on('data', (chunk: Buffer | string) => {
+      /* v8 ignore next -- further chunks after the size limit is exceeded */
+      if (settled) return
       const buf = Buffer.from(chunk)
       size += buf.length
       if (size > limit) {
-        req.destroy()
+        settled = true
         reject(new Error('body too large'))
         return
       }
       chunks.push(buf)
     })
-    req.on('end', () => { resolve(Buffer.concat(chunks).toString('utf8')) })
-    req.on('error', reject)
+    req.on('end', () => {
+      if (settled) return
+      settled = true
+      resolve(Buffer.concat(chunks).toString('utf8'))
+    })
+    /* v8 ignore next 4 -- IncomingMessage error after the request is already settled */
+    req.on('error', (error) => {
+      if (settled) return
+      settled = true
+      reject(error)
+    })
   })
 }

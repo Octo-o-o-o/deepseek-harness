@@ -62,6 +62,15 @@ pub fn refresh_update_item(app: &AppHandle) {
 pub fn install_tray(app: &AppHandle) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
     let hide = MenuItem::with_id(app, "hide", "Hide", true, None::<&str>)?;
+    let open_browser =
+        MenuItem::with_id(app, "open-in-browser", "在浏览器中打开", true, None::<&str>)?;
+    let share = MenuItem::with_id(
+        app,
+        "open-share-window",
+        "在其他设备上使用…",
+        true,
+        None::<&str>,
+    )?;
     let logs = MenuItem::with_id(app, "logs", "Open Log Directory", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let update = MenuItem::with_id(
@@ -73,9 +82,21 @@ pub fn install_tray(app: &AppHandle) -> tauri::Result<()> {
     )?;
     let separator = PredefinedMenuItem::separator(app)?;
     let separator2 = PredefinedMenuItem::separator(app)?;
+    let separator3 = PredefinedMenuItem::separator(app)?;
     let menu = Menu::with_items(
         app,
-        &[&show, &hide, &separator, &update, &separator2, &logs, &quit],
+        &[
+            &show,
+            &hide,
+            &separator,
+            &open_browser,
+            &share,
+            &separator2,
+            &update,
+            &separator3,
+            &logs,
+            &quit,
+        ],
     )?;
     let _ = UPDATE_ITEM.set(Mutex::new(Some(update)));
     let icon = app
@@ -90,6 +111,9 @@ pub fn install_tray(app: &AppHandle) -> tauri::Result<()> {
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show" => show_main(app),
             "hide" => hide_main(app),
+            "open-in-browser" | "open-share-window" => {
+                let _ = crate::share::dispatch_menu(app, event.id.as_ref());
+            }
             // The window is on the sidecar's origin once boot finishes, so the
             // start page's button is gone: this is the only entry to the logs
             // for a session that misbehaves after it started.

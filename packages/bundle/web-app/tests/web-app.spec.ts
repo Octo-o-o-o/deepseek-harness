@@ -6,6 +6,7 @@
  */
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:http'
 import type { IncomingMessage } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -15,6 +16,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import type { WebRequestGuard, WebServer } from '@deepseek-ai/dsh-host-webserver'
 import { apply, Config, internals } from '../src/index.ts'
 import { injectDesktopBootstrapScript } from '../src/desktop-bootstrap.ts'
+import { SHARE_INTERNAL_HOST } from '../src/share-gateway.ts'
 import { WEB_STARTUP_SERVICE } from '../src/startup.ts'
 
 vi.mock('node:os', async importOriginal => ({
@@ -57,14 +59,19 @@ function fakeHttpServer(
   seat: () => unknown
   guard: () => WebRequestGuard | undefined
   applyTaps: (html: string) => string
+  handlers: Map<string, (req: IncomingMessage, res: import('node:http').ServerResponse) => void>
 } {
   let fallback: unknown
   let guard: WebRequestGuard | undefined
   const taps: ((html: string) => string)[] = []
+  const handlers = new Map<string, (req: IncomingMessage, res: import('node:http').ServerResponse) => void>()
   const server = {
     host,
     port: 4567,
-    register: () => () => {},
+    register: (route: { path: string; handler: (req: IncomingMessage, res: import('node:http').ServerResponse) => void }) => {
+      handlers.set(route.path, route.handler)
+      return () => { handlers.delete(route.path) }
+    },
     registerGuard: (installed: WebRequestGuard) => {
       guard = installed
       return () => { guard = undefined }
@@ -88,6 +95,7 @@ function fakeHttpServer(
     seat: () => fallback,
     guard: () => guard,
     applyTaps: html => taps.reduce((acc, tap) => tap(acc), html),
+    handlers,
   }
 }
 
@@ -280,6 +288,10 @@ describe('web-app runtime glue', () => {
     })
     apply(ctx, new Config({ printUrl: false, surfaceContext: false, trustedHosts: [] }))
     await new Promise(resolve => setTimeout(resolve, 0))
+    expect(ctx.get('webRuntime')).toEqual({
+      lanAddresses: [],
+      trustedHosts: [SHARE_INTERNAL_HOST],
+    })
     const installed = guard()
     expect(installed).toBeDefined()
     // A patch-layer plugin's own namespace is authenticated without that
@@ -324,6 +336,7 @@ describe('web-app runtime glue', () => {
     await new Promise(resolve => setTimeout(resolve, 0))
     const injected = applyTaps('<head></head><body>shell</body>')
     expect(injected).toContain('window.__DSH_DESKTOP_BOOTSTRAP__')
+    expect(injected).toContain('randomUUID')
     expect(injected).not.toContain('secret')
     expect(injected).not.toContain('__DSH_TOKEN__')
     expect(injected.startsWith('<head>')).toBe(true)
@@ -343,6 +356,60 @@ describe('web-app runtime glue', () => {
       expect(originalResolve()).toMatch(/dist[/\\]index\.html$/)
     } catch (error) {
       expect((error as Error).message).toContain('frontend dist not built')
+    }
+  })
+
+  it('fails loud when only one of the paired desktop env names is set', () => {
+    stageDist()
+    const ctx = new Context()
+    ctx.provide('webServer', fakeHttpServer().server)
+    ctx.provide(WEB_STARTUP_SERVICE, {
+      trustedHosts: [],
+      desktopToken: 'tok',
+      desktopBootstrapNonce: '',
+    })
+    expect(() => apply(ctx, new Config({ printUrl: false, surfaceContext: false, trustedHosts: [] })))
+      .toThrow('must both be set')
+  })
+
+  it('registers desktop control routes that the fake server can dispatch', async () => {
+    stageDist()
+    const ctx = new Context()
+    const { server, handlers } = fakeHttpServer()
+    ctx.provide('webServer', server)
+    ctx.provide(WEB_STARTUP_SERVICE, {
+      trustedHosts: [],
+      desktopToken: 'tok',
+      desktopBootstrapNonce: 'nonce',
+    })
+    apply(ctx, new Config({ printUrl: false, surfaceContext: false, trustedHosts: [] }))
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const dispatch = createServer((req, res) => {
+      const path = new URL(req.url ?? '/', 'http://x').pathname
+      const handler = handlers.get(path)
+      if (handler === undefined) {
+        res.writeHead(404)
+        res.end()
+        return
+      }
+      handler(req, res)
+    })
+    await new Promise<void>(resolve => dispatch.listen(0, '127.0.0.1', resolve))
+    const addr = dispatch.address()
+    if (addr === null || typeof addr === 'string') throw new Error('expected tcp')
+    const base = `http://127.0.0.1:${String(addr.port)}`
+    try {
+      const ready = await fetch(`${base}/__dshd_ready`, { method: 'POST' })
+      expect(ready.status).toBe(401)
+      const status = await fetch(`${base}/__dshd_status`)
+      expect(status.status).toBe(401)
+      const bootstrap = await fetch(`${base}/__dshd_bootstrap`, { method: 'GET' })
+      expect(bootstrap.status).toBe(405)
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        dispatch.close((error) => { if (error !== undefined) reject(error); else resolve() })
+      })
+      await ctx.fiber.dispose()
     }
   })
 })

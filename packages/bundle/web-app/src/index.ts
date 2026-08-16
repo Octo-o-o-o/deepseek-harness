@@ -30,9 +30,11 @@ import {
   handleDesktopReady,
   handleDesktopStatus,
   injectDesktopBootstrapScript,
+  injectRandomUuidPolyfill,
   READY_PATH,
   STATUS_PATH,
 } from './desktop-bootstrap.ts'
+import { installShareGateway, SHARE_INTERNAL_HOST } from './share-gateway.ts'
 import { WEB_STARTUP_SERVICE, type WebStartupValues } from './startup.ts'
 
 /** Stable Cordis plugin name. */
@@ -159,10 +161,13 @@ function desktopBootstrapFromStartup(ctx: Context): DesktopBootstrap | undefined
  * @param config - validated {@link Config}.
  */
 export function apply(ctx: Context, config: Config): void {
-  const runtime = resolveLanTrust(ctx.webServer.host, config.trustedHosts)
+  const desktop = desktopBootstrapFromStartup(ctx)
+  const extraHosts = desktop === undefined
+    ? config.trustedHosts
+    : [...config.trustedHosts, SHARE_INTERNAL_HOST]
+  const runtime = resolveLanTrust(ctx.webServer.host, extraHosts)
   // Release dependent rows only after bind-dependent trust has been sampled once.
   ctx.provide(WEB_RUNTIME_SERVICE, runtime)
-  const desktop = desktopBootstrapFromStartup(ctx)
   if (desktop !== undefined) {
     // Server-wide, so every `/api` route is authenticated — including the ones
     // patch-layer plugins register, which the connection plugin never sees.
@@ -171,7 +176,7 @@ export function apply(ctx: Context, config: Config): void {
       'web-app: desktop /api guard',
     )
     ctx.effect(
-      () => ctx.webServer.tapIndex(html => injectDesktopBootstrapScript(html)),
+      () => ctx.webServer.tapIndex(html => injectRandomUuidPolyfill(injectDesktopBootstrapScript(html))),
       'web-app: desktop bootstrap',
     )
     ctx.effect(
@@ -197,6 +202,10 @@ export function apply(ctx: Context, config: Config): void {
         handler: (req, res) => { handleDesktopStatus(req, res, desktop) },
       }),
       'web-app: /__dshd_status',
+    )
+    ctx.effect(
+      () => installShareGateway(ctx, desktop),
+      'web-app: share gateway',
     )
   }
   ctx.plugin(FrontendStatic, { distIndex: internals.resolveDistIndex() })

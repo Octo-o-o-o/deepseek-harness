@@ -1,7 +1,11 @@
 //! Resolve Node, the web CLI entry, DSH_HOME, and the sidecar working directory.
 
 use std::env;
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
+
+use serde_json::{Map, Value};
 
 /// Path resolution failure.
 #[derive(Debug, thiserror::Error)]
@@ -104,10 +108,108 @@ pub fn ensure_desktop_state(home: &Path, workspace: &Path) -> std::io::Result<()
         return Ok(());
     }
     let body = serde_json::json!({ "workspace": workspace });
-    std::fs::write(
+    fs::write(
         path,
-        serde_json::to_vec_pretty(&body).map_err(std::io::Error::other)?,
+        serde_json::to_vec_pretty(&body).map_err(io::Error::other)?,
     )
+}
+
+/// Nearby / Tailscale switches remembered in `desktop-state.json`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SharePrefs {
+    /// Nearby listen should come back after a relaunch.
+    pub nearby: bool,
+    /// Foreground Tailscale Serve should come back after a relaunch.
+    pub tailscale: bool,
+}
+
+/// Read `{ nearby, tailscale }` from `desktop-state.json`.
+///
+/// Missing files, invalid JSON, and non-boolean fields all yield `false`.
+/// This function never writes.
+///
+/// # Parameters
+/// - `home`: desktop `DSH_HOME`.
+///
+/// # Returns
+/// The recorded switches, or both `false` when they cannot be read.
+pub fn read_share_prefs(home: &Path) -> SharePrefs {
+    let default = SharePrefs {
+        nearby: false,
+        tailscale: false,
+    };
+    let Ok(text) = fs::read_to_string(home.join("desktop-state.json")) else {
+        return default;
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&text) else {
+        return default;
+    };
+    SharePrefs {
+        nearby: value
+            .get("nearby")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        tailscale: value
+            .get("tailscale")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+    }
+}
+
+/// Merge `{ nearby, tailscale }` into `desktop-state.json` without dropping
+/// `workspace` or unknown fields. Invalid JSON is left untouched.
+///
+/// # Parameters
+/// - `home`: desktop `DSH_HOME`.
+/// - `prefs`: switches to persist after the gateway / Serve reached that state.
+///
+/// # Returns
+/// `Ok(())` after the atomic replace. `Err` when the file exists but is not a
+/// JSON object — the caller must not treat that as a successful write.
+pub fn merge_share_prefs(home: &Path, prefs: SharePrefs) -> io::Result<()> {
+    let path = home.join("desktop-state.json");
+    let mut value = match fs::read_to_string(&path) {
+        Ok(text) => match serde_json::from_str::<Value>(&text) {
+            Ok(Value::Object(map)) => Value::Object(map),
+            Ok(_) => return Err(io::Error::other("desktop-state.json is not an object")),
+            Err(_) => return Err(io::Error::other("desktop-state.json is not valid JSON")),
+        },
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Value::Object(Map::new()),
+        Err(err) => return Err(err),
+    };
+    let Some(object) = value.as_object_mut() else {
+        return Err(io::Error::other("desktop-state.json is not an object"));
+    };
+    object.insert("nearby".into(), Value::Bool(prefs.nearby));
+    object.insert("tailscale".into(), Value::Bool(prefs.tailscale));
+    atomic_write_json(&path, &value)
+}
+
+/// Write `value` via a sibling temp file and rename over `path`.
+fn atomic_write_json(path: &Path, value: &Value) -> io::Result<()> {
+    let parent = path.parent().unwrap_or(Path::new("."));
+    let tmp = parent.join(format!(
+        ".{}.tmp-{}",
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("desktop-state.json"),
+        std::process::id()
+    ));
+    let mut bytes = serde_json::to_vec_pretty(value).map_err(io::Error::other)?;
+    bytes.push(b'\n');
+    fs::write(&tmp, bytes)?;
+    replace_file(&tmp, path)
+}
+
+/// Replace `to` with `from`. Windows cannot rename over an existing file.
+fn replace_file(from: &Path, to: &Path) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        if to.exists() {
+            fs::remove_file(to)?;
+        }
+    }
+    fs::rename(from, to)
 }
 
 /// Locate `node`: `DSH_NODE_PATH`, bundled runtime, then PATH.
@@ -370,6 +472,79 @@ mod tests {
         let text = fs::read_to_string(home.join("desktop-state.json")).unwrap();
         assert!(text.contains("/tmp/dsh-workspace"));
         assert!(!text.contains("/tmp/other"));
+        let _ = fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn merge_share_prefs_keeps_workspace_and_unknown_fields() {
+        let home = temp_dir();
+        fs::write(
+            home.join("desktop-state.json"),
+            r#"{"workspace":"/tmp/ws","extra":1}"#,
+        )
+        .unwrap();
+        merge_share_prefs(
+            &home,
+            SharePrefs {
+                nearby: true,
+                tailscale: false,
+            },
+        )
+        .unwrap();
+        let value: Value =
+            serde_json::from_str(&fs::read_to_string(home.join("desktop-state.json")).unwrap())
+                .unwrap();
+        assert_eq!(value["workspace"], "/tmp/ws");
+        assert_eq!(value["extra"], 1);
+        assert_eq!(value["nearby"], true);
+        assert_eq!(value["tailscale"], false);
+        assert_eq!(
+            read_share_prefs(&home),
+            SharePrefs {
+                nearby: true,
+                tailscale: false
+            }
+        );
+        let _ = fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn merge_share_prefs_refuses_to_clobber_invalid_json() {
+        let home = temp_dir();
+        let path = home.join("desktop-state.json");
+        fs::write(&path, "not-json").unwrap();
+        assert!(merge_share_prefs(
+            &home,
+            SharePrefs {
+                nearby: true,
+                tailscale: true
+            }
+        )
+        .is_err());
+        assert_eq!(fs::read_to_string(&path).unwrap(), "not-json");
+        fs::write(&path, "[1]").unwrap();
+        assert!(merge_share_prefs(
+            &home,
+            SharePrefs {
+                nearby: true,
+                tailscale: true
+            }
+        )
+        .is_err());
+        assert_eq!(fs::read_to_string(&path).unwrap(), "[1]");
+        let _ = fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn read_share_prefs_defaults_when_the_file_is_missing() {
+        let home = temp_dir();
+        assert_eq!(
+            read_share_prefs(&home),
+            SharePrefs {
+                nearby: false,
+                tailscale: false
+            }
+        );
         let _ = fs::remove_dir_all(home);
     }
 

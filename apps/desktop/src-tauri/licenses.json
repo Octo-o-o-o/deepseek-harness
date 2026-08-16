@@ -1674,6 +1674,12 @@
     "repository": "https://github.com/awxkee/pxfm"
   },
   {
+    "name": "qrcode",
+    "version": "0.14.1",
+    "license": "MIT OR Apache-2.0",
+    "repository": "https://github.com/kennytm/qrcode-rust"
+  },
+  {
     "name": "quick-xml",
     "version": "0.41.0",
     "license": "MIT",

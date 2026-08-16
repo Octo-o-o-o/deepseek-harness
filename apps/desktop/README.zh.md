@@ -126,6 +126,14 @@ WebView 只允许加载内置起始页与回环 sidecar。其余导航一律拒�
 
 壳始终生成每次启动独立的十六进制 token 与 bootstrap nonce，并作为 `DSH_DESKTOP_TOKEN` / `DSH_DESKTOP_BOOTSTRAP_NONCE` 注入。nonce 经导航 URL 的 fragment（`#dshd-nonce=…`）送达页面——user agent 从不把 fragment 发上网络，因此它不出现在任何响应体中；页面读取后即将其从会话历史中抹除。若改为写进 index，任何能访问该 loopback 端口的本机进程都能拿到它，因为 loopback 不携带用户身份。随后 `POST /__dshd_bootstrap` 设置一个作用域为整个 origin 的 HttpOnly `dsh-token` cookie。有两处读它：webserver 的准入 guard，在 route 匹配之前校验，因此 token 守住整个 `/api` 命名空间，包括 profile patch 插件注册的 route；以及 connection 对每条专用 RPC channel 的校验，插件把 channel 挂在各自的顶层路径上。cookie 的作用域是 origin 而不是 `/api`，因为浏览器无法给客户端 RPC 的 fetch 附加 `X-DSH-Token`，作用域再窄就会让每条插件 channel 在整次启动期间都返回 401。壳以 `X-DSH-Bootstrap` 轮询 `/__dshd_status`，以 `X-DSH-Token` 调用 `/api/host.describe`，二者都在 WebView 客户端 POST `/__dshd_ready` 之后。token 不会进入 argv、任何 URL 或日志。不带这些环境变量的 `dsh web` 行为不变。
 
+## 在其他屏幕上打开
+
+sidecar 仍然只听 `127.0.0.1`。同一进程里仅 Desktop 安装的分享网关给外部浏览器发可撤销的 `dsh-share` cookie，只在跳到回环时注入启动 token。菜单 **在浏览器中打开**（⌘⇧B；托盘同名）会打开 `http://127.0.0.1:<gateway>/`，并在短窗口内接受回环配对；地址栏没有 ticket。**在其他设备上使用…** 打开壳自己的小窗，不进 Web 侧边栏。
+
+附近默认关闭。打开后绑在所选 LAN IPv4 上（不是 `0.0.0.0`）；二维码是 `/p/<ticket>` 中间页，同源 POST 才消费。LAN 是明文 HTTP。**任何网络** 对网关回环端口跑前台 `tailscale serve`，HTTPS 端口由本功能独占，绝不 `off` 用户已有的 443 Serve。退出会停掉这个子进程。远程浏览器不能选文件夹、改设置或改密钥：这些方法继续 403，因为网关把它们的 Host 改写成 `dshd.share.internal`。开关在监听或 Serve 真正进入目标状态后写入 `desktop-state.json` 的 `{ nearby, tailscale }`；损坏的文件原样留下。
+
+`overlay.rs` 仍然拒绝 sidecar argv 上的 `--host 0.0.0.0` 与 `--trusted-host`。
+
 ## 已知限制
 
 - macOS 仅 Apple Silicon。bundle 与其 Node 运行时都是 `arm64`，`minimumSystemVersion` 取运行时自身的下限 macOS 13.5；Intel Mac 请改用 `npx @deepseek-ai/dsh`。构建 `x86_64` 载荷还需让 `pruneNonHostArtifacts` 停止删除 `node-pty/prebuilds/darwin-x64`，并在真实 x64 主机上做终端验证。

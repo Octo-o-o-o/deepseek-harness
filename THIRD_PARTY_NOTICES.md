@@ -475,6 +475,7 @@ The `dshd` desktop application links the crates its `Cargo.lock` resolves. Every
 | [`proc-macro-error-attr`](https://gitlab.com/CreepySkeleton/proc-macro-error) | 1.0.4 | MIT OR Apache-2.0 |
 | [`proc-macro2`](https://github.com/dtolnay/proc-macro2) | 1.0.107 | MIT OR Apache-2.0 |
 | [`pxfm`](https://github.com/awxkee/pxfm) | 0.1.30 | BSD-3-Clause OR Apache-2.0 |
+| [`qrcode`](https://github.com/kennytm/qrcode-rust) | 0.14.1 | MIT OR Apache-2.0 |
 | [`quick-xml`](https://github.com/tafia/quick-xml) | 0.41.0 | MIT |
 | [`quote`](https://github.com/dtolnay/quote) | 1.0.47 | MIT OR Apache-2.0 |
 | [`r-efi`](https://github.com/r-efi/r-efi) | 5.3.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later |

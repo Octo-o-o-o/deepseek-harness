@@ -24,3 +24,4 @@ dsh 浏览器表层组合包。[`cordis.patch.yml`](cordis.patch.yml) 叠加在 
 
 - **前端 dist 必须已构建**：对 dist 的 `require.resolve` 在激活时明确报错并给出构建提示；没有从源码直接服务的回退路径。
 - **`lanAddresses` 是启动期快照**：启动后的网卡变化不会重新公告；打印的 LAN URL 始终与配置的信任栅栏一致。
+- **Desktop 分享网关**：成对的 `DSH_DESKTOP_TOKEN` / `DSH_DESKTOP_BOOTSTRAP_NONCE` 会安装一个单独的监听，用可撤销的 `dsh-share` cookie 配对外部浏览器，只在跳到回环时注入启动 token。没有这些环境变量时网关不存在：`GET /p/...` 仍是普通 SPA 回退；没有 bootstrap nonce 时不得 POST `/__dshd_bootstrap`。

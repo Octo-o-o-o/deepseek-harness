@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="zh-Hans">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>在其他设备上使用</title>
+    <link rel="stylesheet" href="./share.css" />
+    <script>
+      const invoke = (cmd, args) => {
+        const core = window.__TAURI__ && window.__TAURI__.core
+        if (!core || !core.invoke) return Promise.reject(new Error('shell commands unavailable'))
+        return core.invoke(cmd, args)
+      }
+
+      const state = { tab: 'nearby' }
+
+      const $ = (id) => document.getElementById(id)
+
+      const setHidden = (el, hidden) => {
+        if (!el) return
+        el.hidden = hidden
+      }
+
+      const renderQr = (host, svg, url) => {
+        host.innerHTML = ''
+        if (svg) {
+          host.innerHTML = svg
+          host.hidden = false
+          return
+        }
+        host.hidden = true
+        if (url) {
+          const p = document.createElement('p')
+          p.className = 'url'
+          p.textContent = url
+          host.appendChild(p)
+          host.hidden = false
+        }
+      }
+
+      const fillAddresses = (selected, addresses) => {
+        const select = $('nearby-address')
+        const wrap = $('nearby-address-wrap')
+        if (!select || !wrap) return
+        select.innerHTML = ''
+        for (const entry of addresses) {
+          const option = document.createElement('option')
+          option.value = entry.address
+          option.textContent = `${entry.address} · ${entry.iface}`
+          if (entry.address === selected) option.selected = true
+          select.appendChild(option)
+        }
+        wrap.hidden = addresses.length < 2
+      }
+
+      const setSwitch = (el, on) => {
+        el.dataset.on = on ? '1' : '0'
+        el.setAttribute('aria-checked', on ? 'true' : 'false')
+        el.textContent = on ? '开' : '关'
+      }
+
+      const render = (snap) => {
+        const error = $('error')
+        if (snap.error) {
+          error.hidden = false
+          error.textContent = snap.error
+        } else {
+          error.hidden = true
+          error.textContent = ''
+        }
+
+        const nearby = snap.nearby || {}
+        setSwitch($('nearby-switch'), !!nearby.enabled)
+        fillAddresses(nearby.selectedAddress, nearby.addresses || [])
+        const nearbyQr = $('nearby-qr')
+        if (nearby.enabled) {
+          renderQr(nearbyQr, nearby.qrSvg, nearby.ticketUrl)
+          setHidden($('nearby-hint'), false)
+        } else {
+          nearbyQr.innerHTML = ''
+          nearbyQr.hidden = true
+          setHidden($('nearby-hint'), true)
+        }
+
+        const ts = snap.tailscale || {}
+        const installed = $('ts-installed')
+        const missing = $('ts-missing')
+        const offline = $('ts-offline')
+        const ready = $('ts-ready')
+        setHidden(missing, ts.installed)
+        setHidden(installed, !ts.installed)
+        if (!ts.installed) {
+          setHidden(offline, true)
+          setHidden(ready, true)
+          return
+        }
+        const connected = !!ts.running
+        setHidden(offline, connected)
+        setHidden(ready, !connected)
+        if (!connected) return
+        setSwitch($('ts-switch'), !!ts.enabled)
+        const meta = $('ts-meta')
+        if (ts.enabled && ts.machine) {
+          meta.hidden = false
+          meta.textContent = ts.httpsPort && ts.httpsPort !== 443
+            ? `${ts.machine} · 端口 ${ts.httpsPort}`
+            : ts.machine
+        } else {
+          meta.hidden = true
+        }
+        const tsQr = $('ts-qr')
+        if (ts.enabled) {
+          renderQr(tsQr, ts.qrSvg, ts.ticketUrl)
+          setHidden($('ts-hint'), false)
+        } else {
+          tsQr.innerHTML = ''
+          tsQr.hidden = true
+          setHidden($('ts-hint'), true)
+        }
+      }
+
+      const refresh = () => invoke('share_snapshot').then(render).catch((err) => {
+        render({ error: String(err && err.message ? err.message : err), nearby: {}, tailscale: {} })
+      })
+
+      const showTab = (tab) => {
+        state.tab = tab
+        $('tab-nearby').classList.toggle('is-active', tab === 'nearby')
+        $('tab-anywhere').classList.toggle('is-active', tab === 'anywhere')
+        $('tab-nearby').setAttribute('aria-selected', tab === 'nearby' ? 'true' : 'false')
+        $('tab-anywhere').setAttribute('aria-selected', tab === 'anywhere' ? 'true' : 'false')
+        $('panel-nearby').hidden = tab !== 'nearby'
+        $('panel-anywhere').hidden = tab !== 'anywhere'
+      }
+
+      window.addEventListener('DOMContentLoaded', () => {
+        $('tab-nearby').addEventListener('click', () => showTab('nearby'))
+        $('tab-anywhere').addEventListener('click', () => showTab('anywhere'))
+        $('nearby-switch').addEventListener('click', () => {
+          const on = $('nearby-switch').dataset.on !== '1'
+          const address = $('nearby-address').value || undefined
+          invoke('set_share_nearby', { enabled: on, bindAddress: address }).then(render)
+        })
+        $('nearby-address').addEventListener('change', () => {
+          invoke('select_share_address', { address: $('nearby-address').value }).then(render)
+        })
+        $('ts-switch').addEventListener('click', () => {
+          const on = $('ts-switch').dataset.on !== '1'
+          invoke('set_share_tailscale', { enabled: on }).then(render)
+        })
+        $('ts-download').addEventListener('click', () => invoke('open_tailscale_download'))
+        showTab('nearby')
+        refresh()
+        setInterval(refresh, 2500)
+      })
+    </script>
+  </head>
+  <body>
+    <header>
+      <p class="kicker">同一份会话</p>
+      <h1>在其他设备上使用</h1>
+      <p class="lede">把这个窗口开到本机浏览器、同一 Wi-Fi 的手机，或 Tailscale 上的另一台机器。</p>
+    </header>
+    <p id="error" class="error" hidden></p>
+    <div class="tabs" role="tablist">
+      <button id="tab-nearby" type="button" role="tab" aria-selected="true" class="is-active">附近</button>
+      <button id="tab-anywhere" type="button" role="tab" aria-selected="false">任何网络</button>
+    </div>
+
+    <section id="panel-nearby" role="tabpanel">
+      <div class="row">
+        <div>
+          <h2>允许附近设备访问</h2>
+          <p class="muted">同一 Wi-Fi。默认关闭。</p>
+        </div>
+        <button id="nearby-switch" type="button" role="switch" aria-checked="false" data-on="0">关</button>
+      </div>
+      <label id="nearby-address-wrap" hidden>
+        网卡
+        <select id="nearby-address"></select>
+      </label>
+      <div id="nearby-qr" class="qr" hidden></div>
+      <div id="nearby-hint" hidden>
+        <p>用手机相机扫码；微信请选在 Safari 中打开。</p>
+        <p class="warn">同一网络里完成扫码的人可以驱使这台电脑上的 agent。公共 Wi-Fi 请关掉。明文 HTTP 可被同网截获。</p>
+        <p class="muted">连不上时用电脑热点，或改用「任何网络」。</p>
+      </div>
+      <p class="limits">选文件夹、改设置、改密钥、在访达中打开只在这台电脑（含本机浏览器）上可用。</p>
+    </section>
+
+    <section id="panel-anywhere" role="tabpanel" hidden>
+      <div id="ts-missing">
+        <h2>需要 Tailscale</h2>
+        <p>两边都装上并连上之后，才能在别的网络打开这一份会话。不会做成公网隧道。</p>
+        <button id="ts-download" type="button">打开 Tailscale 下载页</button>
+      </div>
+      <div id="ts-installed" hidden>
+        <p id="ts-offline" class="warn" hidden>Tailscale 已安装但未连上。请先在 Tailscale 里连上，再打开开关。</p>
+        <div id="ts-ready" hidden>
+          <div class="row">
+            <div>
+              <h2>允许 tailnet 上的设备访问</h2>
+              <p class="muted">走 HTTPS。退出 dshd 会停掉我们拉起的那条 Serve，不碰你原来的 443。</p>
+            </div>
+            <button id="ts-switch" type="button" role="switch" aria-checked="false" data-on="0">关</button>
+          </div>
+          <p id="ts-meta" class="meta" hidden></p>
+          <div id="ts-qr" class="qr" hidden></div>
+          <div id="ts-hint" hidden>
+            <p>手机先打开 Tailscale 再扫码。首次 HTTPS 若浏览器要同意，按提示操作。</p>
+            <p class="muted">书签在重启 dshd 后失效，需要重新扫码。</p>
+          </div>
+        </div>
+      </div>
+      <p class="limits">选文件夹、改设置、改密钥、在访达中打开只在这台电脑（含本机浏览器）上可用。</p>
+    </section>
+  </body>
+</html>

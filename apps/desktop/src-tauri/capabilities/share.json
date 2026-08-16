@@ -1,0 +1,20 @@
+{
+  "identifier": "share-window",
+  "description": "Share-sheet commands for the shell-owned share window. Not granted to the sidecar origin.",
+  "windows": [
+    "share"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-show",
+    "core:window:allow-close",
+    "core:window:allow-set-focus",
+    "core:window:allow-minimize",
+    "core:window:allow-unminimize",
+    "allow-share-snapshot",
+    "allow-set-share-nearby",
+    "allow-set-share-tailscale",
+    "allow-select-share-address",
+    "allow-open-tailscale-download"
+  ]
+}

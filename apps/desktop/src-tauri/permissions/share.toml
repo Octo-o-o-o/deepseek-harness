@@ -1,0 +1,24 @@
+[[permission]]
+identifier = "allow-share-snapshot"
+description = "Read the share-sheet snapshot: listens, pairing URLs, and Tailscale presence."
+commands.allow = ["share_snapshot"]
+
+[[permission]]
+identifier = "allow-set-share-nearby"
+description = "Enable or disable the nearby share listen."
+commands.allow = ["set_share_nearby"]
+
+[[permission]]
+identifier = "allow-set-share-tailscale"
+description = "Enable or disable this app's foreground Tailscale Serve."
+commands.allow = ["set_share_tailscale"]
+
+[[permission]]
+identifier = "allow-select-share-address"
+description = "Choose which LAN address the nearby QR advertises."
+commands.allow = ["select_share_address"]
+
+[[permission]]
+identifier = "allow-open-tailscale-download"
+description = "Open the Tailscale download page in the default browser."
+commands.allow = ["open_tailscale_download"]

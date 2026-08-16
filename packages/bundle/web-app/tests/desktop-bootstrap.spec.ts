@@ -19,6 +19,7 @@ import {
   handleDesktopReady,
   handleDesktopStatus,
   injectDesktopBootstrapScript,
+  injectRandomUuidPolyfill,
   READY_PATH,
   STATUS_PATH,
 } from '../src/desktop-bootstrap.ts'
@@ -26,23 +27,28 @@ import {
 function evaluateInjection(
   html: string,
   hash = '',
-): { alertCalls: number; bootstrap: unknown; rewrittenUrl: string | undefined } {
+): { alertCalls: number; bootstrap: unknown; rewrittenUrl: string | undefined; fetchCalls: number; done: unknown } {
   const script = /<script>([\s\S]*?)<\/script>/.exec(html)?.[1]
   if (script === undefined) throw new Error('missing injected script')
   let alertCalls = 0
+  let fetchCalls = 0
   let rewrittenUrl: string | undefined
   const window: Record<string, unknown> = {}
   vm.runInNewContext(script, {
     window,
     URLSearchParams,
+    Promise,
     location: { hash, pathname: '/', search: '' },
     history: {
       replaceState: (_state: unknown, _title: unknown, url: string) => { rewrittenUrl = url },
     },
-    fetch: async () => ({ ok: true }),
+    fetch: async () => {
+      fetchCalls += 1
+      return { ok: true }
+    },
     alert: () => { alertCalls += 1 },
   })
-  return { alertCalls, bootstrap: window.__DSH_DESKTOP_BOOTSTRAP__, rewrittenUrl }
+  return { alertCalls, bootstrap: window.__DSH_DESKTOP_BOOTSTRAP__, rewrittenUrl, fetchCalls, done: window.__DSH_DESKTOP_BOOTSTRAP_DONE__ }
 }
 
 /**
@@ -103,6 +109,7 @@ describe('foreign /api route report', () => {
 describe('nonce consume', () => {
   it('accepts the nonce once and rejects reuse, mismatch, and expiry', () => {
     const session = new DesktopBootstrap('tok', 'nonce', BOOTSTRAP_TTL_MS, 1_000)
+    expect(session.consume('x', 1_001)).toBe('invalid')
     expect(session.consume('wrong', 1_001)).toBe('invalid')
     expect(session.consume('nonce', 1_000 + BOOTSTRAP_TTL_MS)).toBe('expired')
     expect(session.consume('nonce', 1_001)).toBe('ok')
@@ -119,6 +126,8 @@ describe('script injection', () => {
     expect(html).not.toContain('9f86d081884c7d65')
     const { bootstrap } = evaluateInjection(html, `#${BOOTSTRAP_FRAGMENT_KEY}=9f86d081884c7d65`)
     expect(bootstrap).toBe('9f86d081884c7d65')
+    const { fetchCalls } = evaluateInjection(html, `#${BOOTSTRAP_FRAGMENT_KEY}=abc`)
+    expect(fetchCalls).toBe(1)
     expect(html).not.toContain('__DSH_TOKEN__')
   })
 
@@ -140,11 +149,13 @@ describe('script injection', () => {
     expect(rewrittenUrl).toBe('/#view=trajectory')
   })
 
-  it('yields an empty nonce without a fragment, so a shell-less page gets no cookie', () => {
+  it('yields an empty nonce without a fragment and does not POST bootstrap', async () => {
     const html = injectDesktopBootstrapScript('<head></head>')
-    const { bootstrap, rewrittenUrl } = evaluateInjection(html, '')
+    const { bootstrap, rewrittenUrl, fetchCalls, done } = evaluateInjection(html, '')
     expect(bootstrap).toBe('')
     expect(rewrittenUrl).toBeUndefined()
+    expect(fetchCalls).toBe(0)
+    await expect(done).resolves.toBeUndefined()
   })
 
   it('treats hostile fragment content as an opaque value rather than code', () => {
@@ -156,6 +167,41 @@ describe('script injection', () => {
     )
     expect(alertCalls).toBe(0)
     expect(bootstrap).toBe(hostile)
+  })
+})
+
+describe('randomUUID polyfill', () => {
+  it('defines randomUUID from getRandomValues when the origin has no secure-context UUID', () => {
+    const html = injectRandomUuidPolyfill('<head></head>')
+    const script = /<script>([\s\S]*?)<\/script>/.exec(html)?.[1]
+    if (script === undefined) throw new Error('missing injected script')
+    const bytes = new Uint8Array(16)
+    bytes.fill(0xab)
+    const crypto = {
+      getRandomValues: (target: Uint8Array) => {
+        target.set(bytes)
+        return target
+      },
+    }
+    vm.runInNewContext(script, { globalThis: { crypto } })
+    expect(typeof crypto.randomUUID).toBe('function')
+    const uuid = (crypto as { randomUUID: () => string }).randomUUID()
+    expect(uuid).toMatch(/^........-....-4...-[89ab]...-............$/i)
+  })
+
+  it('leaves an existing randomUUID alone and prefixes html that has no head', () => {
+    const existing = (): string => 'kept'
+    const crypto = { randomUUID: existing, getRandomValues: () => { throw new Error('unused') } }
+    vm.runInNewContext(
+      /<script>([\s\S]*?)<\/script>/.exec(injectRandomUuidPolyfill('<head></head>'))![1]!,
+      { globalThis: { crypto } },
+    )
+    expect(crypto.randomUUID).toBe(existing)
+    expect(injectRandomUuidPolyfill('plain')).toMatch(/^<script>/)
+    vm.runInNewContext(
+      /<script>([\s\S]*?)<\/script>/.exec(injectRandomUuidPolyfill('plain'))![1]!,
+      { globalThis: {} },
+    )
   })
 })
 
@@ -224,6 +270,25 @@ describe('HTTP routes', () => {
       expect(ready.status).toBe(204)
       const readyAgain = await fetch(`${base}${STATUS_PATH}`, { headers: { 'x-dsh-bootstrap': 'nonce' } })
       expect(await readyAgain.json()).toEqual({ ready: true })
+
+      expect((await fetch(`${base}${BOOTSTRAP_PATH}`)).status).toBe(405)
+      expect((await fetch(`${base}${READY_PATH}`)).status).toBe(405)
+      expect((await fetch(`${base}${STATUS_PATH}`, { method: 'POST' })).status).toBe(405)
+      expect((await fetch(`${base}${BOOTSTRAP_PATH}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: 'x'.repeat(5000),
+      })).status).toBe(413)
+      expect((await fetch(`${base}${BOOTSTRAP_PATH}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{',
+      })).status).toBe(400)
+      expect((await fetch(`${base}${BOOTSTRAP_PATH}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ nonce: '' }),
+      })).status).toBe(400)
     } finally {
       await new Promise<void>((resolve, reject) => {
         server.close((error) => { if (error !== undefined) reject(error); else resolve() })

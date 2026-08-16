@@ -20,10 +20,12 @@ mod pid;
 mod plugins;
 mod process;
 mod ready;
+mod share;
 mod shell_env;
 mod sidecar;
 mod state;
 mod supervisor;
+mod tailscale;
 mod token;
 mod tray;
 mod update;
@@ -63,6 +65,7 @@ pub struct AppState {
     supervisor: SidecarSupervisor,
     boot: Mutex<Option<thread::JoinHandle<()>>>,
     home: Mutex<Option<std::path::PathBuf>>,
+    share: Mutex<Option<share::ShareRuntime>>,
     _lock: Mutex<Option<HomeLock>>,
     /// Profile-manifest stamp taken while launching this sidecar; the running
     /// composition read its bundle list at that moment.
@@ -72,6 +75,11 @@ pub struct AppState {
 impl AppState {
     /// Unique stop entry: cancel boot, take the sidecar out of the lock, shut it down.
     pub fn request_stop(&self) {
+        if let Ok(mut share) = self.share.lock() {
+            if let Some(runtime) = share.as_mut() {
+                runtime.stop_tailscale();
+            }
+        }
         self.supervisor.request_stop();
         if let Ok(home) = self.home.lock() {
             if let Some(home) = home.as_ref() {
@@ -102,6 +110,7 @@ pub fn run() {
             supervisor: SidecarSupervisor::new(),
             boot: Mutex::new(None),
             home: Mutex::new(None),
+            share: Mutex::new(None),
             _lock: Mutex::new(None),
             profile_stamp: Mutex::new(None),
         })
@@ -109,10 +118,18 @@ pub fn run() {
             open_log_directory,
             plugins_pending_restart,
             restart_for_plugins,
-            attention::notify_attention
+            attention::notify_attention,
+            share::open_in_browser,
+            share::open_share_window,
+            share::share_snapshot,
+            share::set_share_nearby,
+            share::set_share_tailscale,
+            share::select_share_address,
+            share::open_tailscale_download
         ])
         .setup(|app| {
             install_tray(app.handle())?;
+            share::install_app_menu(app.handle())?;
             update::spawn_checker(app.handle().clone());
             let signal_handle = app.handle().clone();
             if let Err(err) = ctrlc::set_handler(move || {
@@ -146,8 +163,10 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
+                if window.label() == "main" {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
             }
         })
         .build(tauri::generate_context!())
@@ -369,6 +388,7 @@ fn boot_and_navigate(
         return Err(err.to_string());
     }
     phase = transition(phase, BootEvent::WsReady);
+    share::attach_after_boot(handle, port, &token);
     let _ = transition(phase, BootEvent::Visible);
     if state.supervisor.wait_for_unexpected_exit(SIDECAR_POLL) {
         return Err("the local host stopped unexpectedly".into());

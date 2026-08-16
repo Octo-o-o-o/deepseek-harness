@@ -24,3 +24,4 @@ The prompt section sits near the system prompt's head and is stable for the life
 
 - **The frontend dist must be built** — `require.resolve` of the dist fails loud at activation with a build hint; there is no source-serving fallback.
 - **`lanAddresses` is a boot-time snapshot** — interface changes after boot are not re-advertised; the printed LAN URL always matches the configured trust fence.
+- **Desktop share gateway** — paired `DSH_DESKTOP_TOKEN` / `DSH_DESKTOP_BOOTSTRAP_NONCE` install a separate listen that pairs external browsers with a revocable `dsh-share` cookie and injects the launch token only on the hop to loopback. Without those env vars the gateway is absent: `GET /p/...` is the ordinary SPA fallback, and an absent bootstrap nonce must not POST `/__dshd_bootstrap`.
