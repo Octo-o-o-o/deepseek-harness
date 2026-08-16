@@ -50,12 +50,12 @@ async function listen(server: Server, beforeClose?: () => void): Promise<number>
 }
 
 interface Captured {
-  host?: string
-  token?: string
-  forwarded?: string
-  cookie?: string
-  origin?: string
-  path?: string
+  host: string | undefined
+  token: string | undefined
+  forwarded?: string | undefined
+  cookie?: string | undefined
+  origin?: string | undefined
+  path: string | undefined
 }
 
 async function startSidecar(): Promise<{ port: number; captured: Captured[]; server: Server }> {

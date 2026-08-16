@@ -177,16 +177,19 @@ describe('randomUUID polyfill', () => {
     if (script === undefined) throw new Error('missing injected script')
     const bytes = new Uint8Array(16)
     bytes.fill(0xab)
-    const crypto = {
+    const crypto: {
+      getRandomValues: (target: Uint8Array) => Uint8Array
+      randomUUID?: () => string
+    } = {
       getRandomValues: (target: Uint8Array) => {
         target.set(bytes)
         return target
       },
     }
     vm.runInNewContext(script, { globalThis: { crypto } })
-    expect(typeof crypto.randomUUID).toBe('function')
-    const uuid = (crypto as { randomUUID: () => string }).randomUUID()
-    expect(uuid).toMatch(/^........-....-4...-[89ab]...-............$/i)
+    const uuid = crypto.randomUUID
+    if (typeof uuid !== 'function') throw new Error('polyfill missing')
+    expect(uuid()).toMatch(/^........-....-4...-[89ab]...-............$/i)
   })
 
   it('leaves an existing randomUUID alone and prefixes html that has no head', () => {
