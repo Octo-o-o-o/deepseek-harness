@@ -20,7 +20,7 @@ Status: implemented
 
 **检测属于壳。** 壳在启动 sidecar 时给 profile manifest 的修改时间打快照，按需比对。这不需要与 sidecar 就「什么算已安装」达成一致，不需要比较墙钟时间，也不需要 host 侧插件。用不相等而非先后：编辑器写入更早的时间戳，或从备份恢复，同样意味着组合已与磁盘上的内容不符。
 
-**页面经运行时 capability 到达壳。** sidecar 页面对 Tauri 而言是远程 origin，在 capability 指名它之前调不到任何 command。端口由 OS 分配，因此壳在端口已知后再注册 capability（`dynamic-acl`），指名那个确切 origin 与恰好两个 command。若在静态 capability 里用通配端口，就等于把这两个 command 交给任何能绑定 loopback 端口的本机进程——正是 bootstrap token 所要解决的「loopback 不携带身份」问题。
+**页面经运行时 capability 到达壳。** sidecar 页面对 Tauri 而言是远程 origin，在 capability 指名它之前调不到任何 command。端口由 OS 分配，因此壳在端口已知后再注册 capability（`dynamic-acl`），指名那个确切 origin 与恰好两个 command。若在静态 capability 里用通配端口，就等于把这两个 command 交给任何能绑定 loopback 端口的本机进程——正是 bootstrap token 所要解决的「loopback 不携带身份」问题。浏览器半侧有 `window.__TAURI__.core.invoke` 时走它，否则走 `window.__TAURI_INTERNALS__.invoke`——那是 Tauri 注入到每个 WebView 里的 command 函数，也是 `@tauri-apps/api/core` 所包装的那一个。withGlobalTauri 便利对象不是提示出现的前提（[原因](../bug-fix/2026-08-16-desktop-plugin-restart-reads-injected-invoke.md)）。
 
 **确认弹窗是无条件的。** 重启会停掉整个本机会话进程，而浏览器没有跨会话的在途视图：`SessionListState` 带有 ids、摘要、phase 与 jobs，没有 running 标志。弹窗写明代价——进行中的回答会被中断，已保存的记录不会——而不是去猜是否存在这样的回答。
 
@@ -40,7 +40,7 @@ Status: implemented
 
 ## Verification
 
-`pnpm vitest run packages/client/ui-plugin-restart`——两个文件共 13 个测试，该包无未覆盖的行或分支。
+`pnpm vitest run packages/client/ui-plugin-restart`——两个文件共 19 个测试，该包无未覆盖的行或分支。
 
 这些用例断言的是设计的承诺而非代码的写法：桥接层在壳之外、命令失败时、以及答案不是恰好 `true` 时都回报「无待生效项」，因此不可达的壳永远不会把横幅钉在侧栏上；入口在壳报告变更之前不可见；点击入口只打开弹窗而不重启；取消关闭弹窗且不发出任何命令；只有弹窗的确认才会到达 `restart_for_plugins`；被拒绝的重启会显示失败并保持弹窗打开；挂载后才发生的变更会被轮询接住，而其定时器随组件一同销毁；卸载后到达的答案不设置任何状态。注册与词典都随插件 fiber 释放，通过 dispose 验证。
 

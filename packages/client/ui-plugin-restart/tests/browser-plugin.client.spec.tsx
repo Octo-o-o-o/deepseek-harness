@@ -17,12 +17,16 @@ import { apply as nodeApply } from '../src/index.ts'
 import { PluginRestartAction } from '../src/client/PluginRestartAction.tsx'
 import { zh } from '../src/client/locales.ts'
 
-type TauriHost = { __TAURI__?: { core?: { invoke?: (command: string) => Promise<unknown> } } }
+type TauriHost = {
+  __TAURI__?: { core?: { invoke?: (command: string) => Promise<unknown> } }
+  __TAURI_INTERNALS__?: { invoke?: (command: string) => Promise<unknown> }
+}
 
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
   delete (globalThis as TauriHost).__TAURI__
+  delete (globalThis as TauriHost).__TAURI_INTERNALS__
 })
 
 /** Install a shell whose answers the test controls, recording every command. */
@@ -86,6 +90,12 @@ describe('plugin-restart browser half', () => {
     await companion.apply(ctx)
     expect(registered).toEqual(['@deepseek-ai/dsh-client-ui-plugin-restart'])
     await ctx.fiber.dispose()
+  })
+
+  it('renders the rail glyph when the sidebar is folded', async () => {
+    shell(true)
+    await act(async () => { renderAction(false) })
+    expect(screen.getByRole('button', { name: zh['action.label'] }).textContent).toBe('\u21bb')
   })
 
   it('stays invisible while the shell reports nothing pending', async () => {

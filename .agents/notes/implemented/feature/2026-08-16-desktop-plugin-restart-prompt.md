@@ -20,7 +20,7 @@ The sidebar foot grows an entry, visible only while the profile manifest differs
 
 **Detection belongs to the shell.** It stamps the profile manifest's modification time while launching the sidecar and compares it on demand. That needs no agreement with the sidecar about what "installed" means, no wall-clock comparison, and no host-side plugin. Inequality rather than ordering: an editor writing an older timestamp, or a restore from backup, still means the composition no longer matches the disk.
 
-**The page reaches the shell through a runtime capability.** The sidecar page is a remote origin to Tauri and reaches no command until a capability names it. The port is OS-assigned, so the shell registers the capability once the port is known (`dynamic-acl`), naming that exact origin and exactly two commands. A wildcard port in the static capability would have handed those commands to any local process that can bind one — the same loopback-carries-no-identity problem the bootstrap token exists to solve.
+**The page reaches the shell through a runtime capability.** The sidecar page is a remote origin to Tauri and reaches no command until a capability names it. The port is OS-assigned, so the shell registers the capability once the port is known (`dynamic-acl`), naming that exact origin and exactly two commands. A wildcard port in the static capability would have handed those commands to any local process that can bind one — the same loopback-carries-no-identity problem the bootstrap token exists to solve. The browser half calls `window.__TAURI__.core.invoke` when that function exists, otherwise `window.__TAURI_INTERNALS__.invoke` — the command function Tauri injects into every WebView and the one `@tauri-apps/api/core` wraps. The optional withGlobalTauri convenience object is not required for the prompt to appear ([why](../bug-fix/2026-08-16-desktop-plugin-restart-reads-injected-invoke.md)).
 
 **The confirmation is unconditional.** A restart stops the whole local session process, and the browser has no cross-session view of which sessions hold an answer in flight: `SessionListState` carries ids, summaries, phase, and jobs, and no running flag. The dialog states the cost — an answer in progress is interrupted, saved history is not — rather than guessing whether one exists.
 
@@ -40,7 +40,7 @@ The sidebar foot grows an entry, visible only while the profile manifest differs
 
 ## Verification
 
-`pnpm vitest run packages/client/ui-plugin-restart` — 13 tests across two files, no uncovered lines or branches in the package.
+`pnpm vitest run packages/client/ui-plugin-restart` — 19 tests across two files, no uncovered lines or branches in the package.
 
 The suites assert what the design promises rather than what the code does: the bridge answers "nothing pending" outside the shell, on a failing command, and on any answer that is not exactly `true`, so an unreachable shell can never pin a banner to the sidebar; the entry stays invisible until the shell reports a change; clicking it opens the dialog without restarting; cancel closes it with no command sent; only the dialog's accept reaches `restart_for_plugins`; a rejected restart reports the failure and leaves the dialog open; a change landing after mount is picked up by the poll, whose interval dies with the component; and answers arriving after unmount set no state. Registration and dictionary both ride the plugin fiber, checked by disposing it.
 

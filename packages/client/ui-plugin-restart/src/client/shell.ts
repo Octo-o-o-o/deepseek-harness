@@ -2,10 +2,13 @@
  * The desktop shell's IPC surface, as seen from the sidecar page.
  *
  * The page is a remote origin to Tauri, so these commands answer only after
- * the shell registers a capability naming this launch's port. Outside the
- * shell — a browser tab on `dsh web` — the global is absent and every call
- * here reports "nothing pending", which keeps the action invisible rather
- * than broken.
+ * the shell registers a capability naming this launch's port. Invoke is
+ * `window.__TAURI__.core.invoke` when the withGlobalTauri convenience object
+ * is present, otherwise `window.__TAURI_INTERNALS__.invoke` — the command
+ * function Tauri injects into every WebView and the one `@tauri-apps/api/core`
+ * wraps. Outside the shell — a browser tab on `dsh web` — both are absent and
+ * every call here reports "nothing pending", which keeps the action invisible
+ * rather than broken.
  */
 
 /** Commands this surface calls, and what each answers. */
@@ -14,24 +17,37 @@ interface ShellCommands {
   restart_for_plugins: void
 }
 
-/** Shape of `window.__TAURI__` this module reads; absent outside the shell. */
-interface TauriGlobal {
-  core?: {
-    invoke?: (command: string, args?: Record<string, unknown>) => Promise<unknown>
-  }
-}
+/** Tauri's injected command function; payload is unused for these two commands. */
+type Invoke = (command: string, args?: Record<string, unknown>) => Promise<unknown>
 
-function bridge(): TauriGlobal['core'] | undefined {
-  return (globalThis as { __TAURI__?: TauriGlobal }).__TAURI__?.core
+/**
+ * Resolve the shell's command function.
+ *
+ * Prefer the documented withGlobalTauri path; fall back to the injected
+ * internals function that `@tauri-apps/api` itself wraps. Either absence is
+ * "not the shell", not a pending change.
+ *
+ * @returns the invoke function, or undefined outside the packaged application.
+ */
+function resolveInvoke(): Invoke | undefined {
+  const coreInvoke = (globalThis as { __TAURI__?: { core?: { invoke?: Invoke } } }).__TAURI__?.core?.invoke
+  if (typeof coreInvoke === 'function') {
+    return (command, args) => coreInvoke(command, args)
+  }
+  const internalsInvoke = (globalThis as { __TAURI_INTERNALS__?: { invoke?: Invoke } }).__TAURI_INTERNALS__?.invoke
+  if (typeof internalsInvoke === 'function') {
+    return (command, args) => internalsInvoke(command, args)
+  }
+  return undefined
 }
 
 /**
  * Whether the desktop shell is hosting this page.
  *
- * @returns true when the shell's IPC bridge is reachable.
+ * @returns true when either injected invoke path is a function.
  */
 export function isShellHosted(): boolean {
-  return typeof bridge()?.invoke === 'function'
+  return resolveInvoke() !== undefined
 }
 
 /**
@@ -42,11 +58,13 @@ export function isShellHosted(): boolean {
  * an unreachable shell must not pin a restart prompt to the sidebar.
  */
 export async function pluginsPendingRestart(): Promise<boolean> {
-  const invoke = bridge()?.invoke
+  const invoke = resolveInvoke()
   if (invoke === undefined) return false
   try {
-    return await invoke('plugins_pending_restart') === true
+    return await invoke('plugins_pending_restart', {}) === true
   } catch {
+    // IPC refusal, ACL miss, and a thrown command body all mean the shell
+    // cannot be asked; none of those is a pending profile change.
     return false
   }
 }
@@ -61,9 +79,9 @@ export async function pluginsPendingRestart(): Promise<boolean> {
  * @returns settlement of the IPC call.
  */
 export async function requestRestart(): Promise<void> {
-  const invoke = bridge()?.invoke
+  const invoke = resolveInvoke()
   if (invoke === undefined) throw new Error('plugin restart: the desktop shell is not hosting this page')
-  await invoke('restart_for_plugins')
+  await invoke('restart_for_plugins', {})
 }
 
 export type { ShellCommands }
