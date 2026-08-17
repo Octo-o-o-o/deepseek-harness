@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-13-safari-textarea-soft-wrap-reflow.md
-2026-08-13-safari-textarea-soft-wrap-reflow.md: fb264a8e6fbe24369584f2427bbb0c462b450ecf
-2026-08-13-safari-textarea-soft-wrap-reflow.zh.md: 7f55a5260e825059e1f9a08db03f13e19484d14e
+2026-08-13-safari-textarea-soft-wrap-reflow.md: 8aae9b7d165bb9ad95033cb9a8093a6483bdb252
+2026-08-13-safari-textarea-soft-wrap-reflow.zh.md: 3a7403e8d419a67230e3fd60010b411c134eef04

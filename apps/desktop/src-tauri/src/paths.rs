@@ -185,6 +185,61 @@ pub fn merge_share_prefs(home: &Path, prefs: SharePrefs) -> io::Result<()> {
     atomic_write_json(&path, &value)
 }
 
+/// Appearance preference from `$DSH_HOME/settings.yaml` (`ui-theme.preference`).
+///
+/// Missing files and unknown values are `system`, matching the Web GUI default.
+///
+/// # Parameters
+/// - `home`: desktop `DSH_HOME`.
+///
+/// # Returns
+/// `light`, `dark`, or `system`.
+pub fn read_theme_preference(home: &Path) -> &'static str {
+    let Ok(text) = fs::read_to_string(home.join("settings.yaml")) else {
+        return "system";
+    };
+    parse_theme_preference(&text)
+}
+
+fn parse_theme_preference(text: &str) -> &'static str {
+    let mut in_section = false;
+    for raw in text.lines() {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let indented = raw.starts_with(' ') || raw.starts_with('\t');
+        if !indented {
+            in_section = yaml_key(trimmed) == Some("ui-theme");
+            continue;
+        }
+        if !in_section {
+            continue;
+        }
+        if let Some(value) = preference_from_segment(trimmed) {
+            return value;
+        }
+    }
+    "system"
+}
+
+fn yaml_key(trimmed: &str) -> Option<&str> {
+    let line = trimmed.split('#').next()?.trim();
+    let (key, _) = line.split_once(':')?;
+    Some(key.trim())
+}
+
+fn preference_from_segment(segment: &str) -> Option<&'static str> {
+    let line = segment.split('#').next()?.trim();
+    let rest = line.strip_prefix("preference:")?;
+    let value = rest.trim().trim_matches('"').trim_matches('\'');
+    Some(match value {
+        "light" => "light",
+        "dark" => "dark",
+        _ => "system",
+    })
+}
+
 /// Write `value` via a sibling temp file and rename over `path`.
 fn atomic_write_json(path: &Path, value: &Value) -> io::Result<()> {
     let parent = path.parent().unwrap_or(Path::new("."));
@@ -545,6 +600,52 @@ mod tests {
                 tailscale: false
             }
         );
+        let _ = fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn parse_theme_preference_reads_the_ui_theme_block() {
+        assert_eq!(parse_theme_preference(""), "system");
+        assert_eq!(
+            parse_theme_preference("ui-theme:\n  preference: light\n"),
+            "light"
+        );
+        assert_eq!(
+            parse_theme_preference("ui-theme:\n  preference: \"dark\"\n"),
+            "dark"
+        );
+        assert_eq!(
+            parse_theme_preference("ui-theme:\n  preference: 'system'\n"),
+            "system"
+        );
+        assert_eq!(
+            parse_theme_preference("ui-theme:\n  preference: sepia\n"),
+            "system"
+        );
+        assert_eq!(
+            parse_theme_preference("ui-theme:\n  nested: x\nother:\n  preference: dark\n"),
+            "system"
+        );
+        assert_eq!(
+            parse_theme_preference("ui-theme-extra:\n  preference: dark\n"),
+            "system"
+        );
+        assert_eq!(
+            parse_theme_preference("ui-theme:\n  # note\n  preference: dark\n"),
+            "dark"
+        );
+    }
+
+    #[test]
+    fn read_theme_preference_defaults_when_the_file_is_missing() {
+        let home = temp_dir();
+        assert_eq!(read_theme_preference(&home), "system");
+        fs::write(
+            home.join("settings.yaml"),
+            "ui-theme:\n  preference: light\n",
+        )
+        .unwrap();
+        assert_eq!(read_theme_preference(&home), "light");
         let _ = fs::remove_dir_all(home);
     }
 

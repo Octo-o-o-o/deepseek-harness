@@ -1,4 +1,18 @@
-:root {
+:root,
+[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f4f5f3;
+  --panel: #ffffff;
+  --ink: #1a1d1a;
+  --muted: #5c635e;
+  --line: #d5dad4;
+  --accent: #0d7a45;
+  --danger: #c23b2e;
+  --warn: #8a6a12;
+  --switch-off: #d1d5d0;
+}
+
+[data-theme='dark'] {
   color-scheme: dark;
   --bg: #07080b;
   --panel: #0e1210;
@@ -8,6 +22,7 @@
   --accent: #7dffb3;
   --danger: #ff8a7a;
   --warn: #e6c07b;
+  --switch-off: #3a3f3c;
 }
 
 * {
@@ -18,11 +33,16 @@ html,
 body {
   margin: 0;
   min-height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.5 "Avenir Next", "PingFang SC", "Segoe UI", sans-serif;
+}
+
+html[data-theme='dark'],
+html[data-theme='dark'] body {
   background:
     radial-gradient(900px 420px at 80% -20%, #15241c 0%, transparent 55%),
     var(--bg);
-  color: var(--ink);
-  font: 14px/1.5 "Avenir Next", "PingFang SC", "Segoe UI", sans-serif;
 }
 
 body {
@@ -102,20 +122,40 @@ h2 {
   margin-bottom: 0.9rem;
 }
 
-button[role='switch'] {
-  min-width: 3.2rem;
+.switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 51px;
+  height: 31px;
+  min-width: 51px;
   margin: 0;
-  border: 1px solid var(--line);
+  padding: 0;
+  border: 0;
   border-radius: 999px;
-  background: transparent;
-  color: var(--ink);
-  padding: 0.35rem 0.7rem;
+  background: var(--switch-off);
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
-button[role='switch'][data-on='1'] {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
+.switch[aria-checked='true'] {
+  background: #34c759;
+}
+
+.switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+  transition: transform 0.18s ease;
+  pointer-events: none;
+}
+
+.switch[aria-checked='true'] .switch-thumb {
+  transform: translateX(20px);
 }
 
 label {
@@ -179,7 +219,6 @@ select {
 }
 
 #ts-download:hover,
-button[role='switch']:hover,
 .tabs button:hover {
   border-color: var(--accent);
 }

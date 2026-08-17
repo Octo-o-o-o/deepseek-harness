@@ -304,7 +304,10 @@ describe('nearby tickets', () => {
     const scan = await fetch(url)
     expect(scan.status).toBe(200)
     expect(scan.headers.get('referrer-policy')).toBe('no-referrer')
-    expect(await scan.text()).toContain('打开')
+    const scanBody = await scan.text()
+    expect(scanBody).toContain('打开')
+    expect(scanBody).toContain('color-scheme:light')
+    expect(scanBody).toContain('credentials:"same-origin"')
     const scanAgain = await fetch(url)
     expect(scanAgain.status).toBe(200)
 
@@ -316,9 +319,10 @@ describe('nearby tickets', () => {
     expect(put.status).toBe(405)
 
     const paired = await fetch(url, { method: 'POST', redirect: 'manual' })
-    expect(paired.status).toBe(303)
+    expect(paired.status).toBe(200)
     const cookie = cookieFrom(paired)
     expect(cookie).toBeDefined()
+    expect(await paired.text()).toContain('location.replace')
     const replay = await fetch(url, { method: 'POST', redirect: 'manual' })
     expect(replay.status).toBe(410)
 
@@ -365,7 +369,8 @@ describe('tailscale audience', () => {
       method: 'POST',
       headers: { host: 'mac.ts.net' },
     })
-    expect(paired.status).toBe(303)
+    expect(paired.status).toBe(200)
+    expect(paired.body).toContain('location.replace')
     const setCookie = paired.headers['set-cookie']
     expect(Array.isArray(setCookie) ? setCookie[0] : setCookie).toContain('Secure')
     const cookie = cookieFromSetCookie(setCookie)!
@@ -643,8 +648,20 @@ describe('pairing edges', () => {
       headers: { 'sec-fetch-site': 'cross-site' },
     })
     expect(blocked.status).toBe(403)
-    const paired = await fetch(url, { method: 'POST', redirect: 'manual' })
-    expect(paired.status).toBe(303)
+    expect(await blocked.text()).toContain('Safari')
+    const opaqueCross = await fetch(url, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { origin: 'null', 'sec-fetch-site': 'cross-site' },
+    })
+    expect(opaqueCross.status).toBe(403)
+    const opaque = await fetch(url, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { origin: 'null' },
+    })
+    expect(opaque.status).toBe(200)
+    expect(await opaque.text()).toContain('location.replace')
     const reminted = gateway.status().nearbyTicketUrl!
     expect(reminted).not.toBe(url)
     now += TICKET_TTL_MS + 1
@@ -698,7 +715,8 @@ describe('pairing edges', () => {
       method: 'POST',
       headers: { host: 'mac.ts.net' },
     })
-    expect(paired.status).toBe(303)
+    expect(paired.status).toBe(200)
+    expect(paired.body).toContain('location.replace')
     gateway.setTailscaleAudience('')
     expect(gateway.status().tailscaleAudience).toBeNull()
     gateway.setTailscaleAudience('mac.ts.net')

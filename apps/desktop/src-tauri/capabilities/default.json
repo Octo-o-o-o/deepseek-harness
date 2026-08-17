@@ -13,6 +13,7 @@
     "core:window:allow-minimize",
     "core:window:allow-unminimize",
     "allow-open-log-directory",
+    "allow-restart-for-plugins",
     "updater:default",
     "notification:default",
     "notification:allow-notify",

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-Hans">
+<html lang="zh-Hans" data-theme="light">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -12,7 +12,7 @@
         return core.invoke(cmd, args)
       }
 
-      const state = { tab: 'nearby' }
+      const state = { tab: 'nearby', themePreference: 'system' }
 
       const $ = (id) => document.getElementById(id)
 
@@ -56,10 +56,19 @@
       const setSwitch = (el, on) => {
         el.dataset.on = on ? '1' : '0'
         el.setAttribute('aria-checked', on ? 'true' : 'false')
-        el.textContent = on ? '开' : '关'
+      }
+
+      const applyTheme = (preference) => {
+        const pref = preference === 'dark' || preference === 'light' ? preference : 'system'
+        state.themePreference = pref
+        const dark = pref === 'dark'
+          || (pref === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+        document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
       }
 
       const render = (snap) => {
+        applyTheme(snap.themePreference || 'system')
         const error = $('error')
         if (snap.error) {
           error.hidden = false
@@ -149,6 +158,9 @@
           invoke('set_share_tailscale', { enabled: on }).then(render)
         })
         $('ts-download').addEventListener('click', () => invoke('open_tailscale_download'))
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+          applyTheme(state.themePreference)
+        })
         showTab('nearby')
         refresh()
         setInterval(refresh, 2500)
@@ -173,7 +185,9 @@
           <h2>允许附近设备访问</h2>
           <p class="muted">同一 Wi-Fi。默认关闭。</p>
         </div>
-        <button id="nearby-switch" type="button" role="switch" aria-checked="false" data-on="0">关</button>
+        <button id="nearby-switch" type="button" role="switch" class="switch" aria-checked="false" data-on="0" aria-label="允许附近设备访问">
+          <span class="switch-thumb" aria-hidden="true"></span>
+        </button>
       </div>
       <label id="nearby-address-wrap" hidden>
         网卡
@@ -202,7 +216,9 @@
               <h2>允许 tailnet 上的设备访问</h2>
               <p class="muted">走 HTTPS。退出 dshd 会停掉我们拉起的那条 Serve，不碰你原来的 443。</p>
             </div>
-            <button id="ts-switch" type="button" role="switch" aria-checked="false" data-on="0">关</button>
+            <button id="ts-switch" type="button" role="switch" class="switch" aria-checked="false" data-on="0" aria-label="允许 tailnet 上的设备访问">
+              <span class="switch-thumb" aria-hidden="true"></span>
+            </button>
           </div>
           <p id="ts-meta" class="meta" hidden></p>
           <div id="ts-qr" class="qr" hidden></div>

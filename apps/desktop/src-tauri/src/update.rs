@@ -129,9 +129,10 @@ pub async fn check(app: &AppHandle) {
 
 /// Download, install, and restart into the new version.
 ///
-/// The sidecar is stopped first: the installer replaces the bundled Node
-/// runtime and the deployed CLI underneath a running process, and on Windows an
-/// open file cannot be replaced at all.
+/// The sidecar is stopped only after verified bytes are in hand: a failed
+/// download must not kill the running session. The installer still needs the
+/// sidecar stopped, because it replaces the bundled Node runtime and the
+/// deployed CLI; on Windows an open file cannot be replaced at all.
 ///
 /// # Parameters
 /// - `app`: handle used to reach the updater and the sidecar state.
@@ -143,30 +144,136 @@ pub async fn install_and_restart(app: AppHandle) {
     state.set(UpdateStatus::Installing);
     crate::tray::refresh_update_item(&app);
     let outcome = run_install(&app).await;
-    if let Err(message) = outcome {
-        eprintln!("desktop: {message}");
+    if let Err(failure) = outcome {
+        eprintln!("desktop: {}", failure.message);
         state.set(UpdateStatus::Unknown);
         state.busy.store(false, Ordering::SeqCst);
         crate::tray::refresh_update_item(&app);
+        if failure.stopped {
+            let handle = app.clone();
+            let message = failure.message;
+            std::thread::spawn(move || {
+                crate::recover_main_to_splash(&handle, &message);
+            });
+        }
     }
     // The success path never returns: `restart()` replaces the process.
 }
 
-async fn run_install(app: &AppHandle) -> Result<(), String> {
+/// Failed update that did not restart the process.
+struct InstallFailure {
+    /// Whether [`install_verified_update`] already stopped the sidecar.
+    stopped: bool,
+    message: String,
+}
+
+impl InstallFailure {
+    fn before(message: impl Into<String>) -> Self {
+        Self {
+            stopped: false,
+            message: message.into(),
+        }
+    }
+
+    fn after(message: impl Into<String>) -> Self {
+        Self {
+            stopped: true,
+            message: message.into(),
+        }
+    }
+}
+
+async fn run_install(app: &AppHandle) -> Result<(), InstallFailure> {
     let updater = app
         .updater()
-        .map_err(|error| format!("updater unavailable: {error}"))?;
+        .map_err(|error| InstallFailure::before(format!("updater unavailable: {error}")))?;
     let update = updater
         .check()
         .await
-        .map_err(|error| format!("update check failed: {error}"))?
-        .ok_or_else(|| "no update available".to_string())?;
-    // Quiesce before the installer touches the payload.
-    app.state::<AppState>().request_stop();
-    update
-        .download_and_install(|_, _| {}, || {})
+        .map_err(|error| InstallFailure::before(format!("update check failed: {error}")))?
+        .ok_or_else(|| InstallFailure::before("no update available"))?;
+    let bytes = update
+        .download(|_, _| {}, || {})
         .await
-        .map_err(|error| format!("update install failed: {error}"))?;
+        .map_err(|error| InstallFailure::before(format!("update download failed: {error}")))?;
+    install_verified_update(
+        &bytes,
+        || app.state::<AppState>().request_stop(),
+        |payload| {
+            update
+                .install(payload)
+                .map_err(|error| format!("update install failed: {error}"))
+        },
+    )
+    .map_err(InstallFailure::after)?;
     println!("desktop: update installed; restarting");
     app.restart();
+}
+
+/// Stop the sidecar only after update bytes are already verified.
+///
+/// # Parameters
+/// - `bytes`: signed updater payload already downloaded.
+/// - `stop`: stops the sidecar so the installer can replace bundled files.
+/// - `install`: writes those bytes into the application bundle.
+///
+/// # Returns
+/// `Ok` after `install` succeeds, otherwise the install error. `stop` has
+/// already run in that failure case.
+fn install_verified_update<E>(
+    bytes: &[u8],
+    stop: impl FnOnce(),
+    install: impl FnOnce(&[u8]) -> Result<(), E>,
+) -> Result<(), E> {
+    stop();
+    install(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    #[test]
+    fn a_missing_payload_never_stops_the_sidecar() {
+        let stopped = Cell::new(false);
+        let downloaded: Result<Vec<u8>, &str> = Err("network");
+        let result = downloaded
+            .and_then(|bytes| install_verified_update(&bytes, || stopped.set(true), |_| Ok(())));
+        assert_eq!(result, Err("network"));
+        assert!(!stopped.get());
+    }
+
+    #[test]
+    fn install_runs_only_after_stop() {
+        let order: Cell<Vec<&'static str>> = Cell::new(Vec::new());
+        install_verified_update(
+            &[1, 2, 3],
+            || {
+                let mut next = order.take();
+                next.push("stop");
+                order.set(next);
+            },
+            |bytes| {
+                assert_eq!(bytes, &[1, 2, 3]);
+                let mut next = order.take();
+                next.push("install");
+                order.set(next);
+                Ok::<(), &str>(())
+            },
+        )
+        .unwrap();
+        assert_eq!(order.take(), ["stop", "install"]);
+    }
+
+    #[test]
+    fn a_failed_install_has_already_stopped_the_sidecar() {
+        let stopped = Cell::new(false);
+        let result = install_verified_update(&[1], || stopped.set(true), |_| Err("disk"));
+        assert_eq!(result, Err("disk"));
+        assert!(stopped.get());
+        let failure = InstallFailure::after("disk");
+        assert!(failure.stopped);
+        assert!(!InstallFailure::before("network").stopped);
+    }
 }

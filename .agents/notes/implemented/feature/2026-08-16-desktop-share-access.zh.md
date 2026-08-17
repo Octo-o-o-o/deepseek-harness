@@ -16,9 +16,9 @@ Status: implemented
 
 sidecar 进程里有一个仅 Desktop 安装的 **share gateway**（只在成对的桌面环境变量存在时）：单独的 `http.Server`，持有可撤销的 `dsh-share` 会话，检查 Host/Origin/本机网卡，剥掉客户端 `X-DSH-Token` 和转发头，不转发 `/__dshd_*`，只在跳到回环 sidecar 时注入启动 token。本机浏览器流量改写成回环权威，设置面仍可用；附近和 Tailscale 流量改写成静态非回环名 `dshd.share.internal`，该名字在启动时就写在 desktop overlay 的 `trustedHosts` 里，因此 `PRIVILEGED_METHODS` 继续 403。`composeLive` 不重读 argv 里的 `--patch` overlay（`apps/cli/src/profile-boot.ts`），所以不用生成第二份 patch。
 
-注入的 bootstrap 脚本在有 WebView nonce 时仍按今天的方式 POST；**没有 nonce 时不得 POST**，并且必须 resolve `__DSH_DESKTOP_BOOTSTRAP_DONE__`，否则已配对的浏览器会卡在连接循环里。在浏览器中打开走 `http://127.0.0.1:<gateway>/` 加短暂回环配对窗，ticket 不进 `open` 的 argv。扫码配对使用 prefix `/p`（webserver 没有参数路由）：GET 返回 no-store 中间页，同源 POST 才消费票。
+注入的 bootstrap 脚本在有 WebView nonce 时仍按今天的方式 POST；**没有 nonce 时不得 POST**，并且必须 resolve `__DSH_DESKTOP_BOOTSTRAP_DONE__`，否则已配对的浏览器会卡在连接循环里。在浏览器中打开走 `http://127.0.0.1:<gateway>/` 加短暂回环配对窗，ticket 不进 `open` 的 argv。扫码配对使用 prefix `/p`（webserver 没有参数路由）：GET 返回强制浅色 color-scheme 的 no-store 中间页。同源 POST 才消费票，并以 200 带 `Set-Cookie` 和 `location.replace('/')` 作答，不用 303，因为若干手机 WebView 会在重定向上丢掉 cookie。中间页用 `fetch` 提交，好让 Chrome 在跳转前把 cookie 存下来；`Referrer-Policy: no-referrer` 下的 form POST 会带 `Origin: null`，网关把它当成缺 Origin，同时仍拒绝 `sec-fetch-site: cross-site`。分享小窗跟随 `$DSH_HOME/settings.yaml` 里的 `ui-theme.preference`。
 
-附近不改 sidecar 绑定。`overlay.rs` 继续 fail-closed。网关跟踪 HTTP、SSE 和 WebSocket，模式关掉或代次旋转时销毁它们。Tailscale Serve 保留外部 Host，且 `--bg` 比本应用活得长：壳对网关回环端口跑 **前台** `tailscale serve`，HTTPS 端口由本功能独占，绝不盲目 `off` 443。
+附近不改 sidecar 绑定。`overlay.rs` 继续 fail-closed。网关跟踪 HTTP、SSE 和 WebSocket，模式关掉或代次旋转时销毁它们。Tailscale Serve 保留外部 Host，且 `--bg` 比本应用活得长：壳对网关回环端口跑 **前台** `tailscale serve`，HTTPS 端口由本功能独占，绝不盲目 `off` 443。`setTailscaleAudience` 只在 `wait_https_listed` 成功之后才跑；失败会停掉 child 并把错误交回分享窗，因此绝不会给 Serve 尚未公布的端口发二维码。
 
 `tapIndex` 仍注入 `randomUUID` polyfill。`desktop-state.json` 用读—校验—合并—改名写入 `{ nearby, tailscale }`。远程选文件夹被写成不可用——选择器后端看的是主监听的回环绑定，不是页面的 `isLoopback`。
 
@@ -52,7 +52,7 @@ sidecar 进程里有一个仅 Desktop 安装的 **share gateway**（只在成对
 
 `pnpm vitest run packages/bundle/web-app --coverage.enabled --coverage.include='packages/bundle/web-app/src/**'`：64 个测试，包 src（含 `share-gateway.ts`）语句/分支/函数/行 100%。
 
-`cd apps/desktop/src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test`：clippy 干净，92 个测试通过。
+`cd apps/desktop/src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test`：clippy 干净，95 个测试通过。
 
 CLI 姿势：两个桌面环境变量都不设时，`pnpm dsh --profile web --port 18765` 打印 `dsh web: http://127.0.0.1:18765`；`GET /p/x` 返回 HTTP 200、`text/html`，响应体含 `__DSH_BOOT__`，不含 `此码已失效` 或 `请回到 Desktop`。
 

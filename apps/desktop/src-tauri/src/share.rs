@@ -15,7 +15,7 @@ use tauri::menu::{Menu, MenuItem};
 #[cfg(target_os = "macos")]
 use tauri::menu::{MenuItemKind, PredefinedMenuItem};
 use tauri::webview::NewWindowResponse;
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, Theme, WebviewUrl, WebviewWindowBuilder};
 
 use crate::http::http_request;
 use crate::navigation::is_internal_url;
@@ -58,6 +58,8 @@ pub struct ShareSnapshot {
     pub tailscale: TailscaleSnapshot,
     /// Last command failure, when the window should keep showing it.
     pub error: Option<String>,
+    /// Appearance preference from `ui-theme.preference` (`light` / `dark` / `system`).
+    pub theme_preference: String,
 }
 
 /// Nearby listen and pairing URL.
@@ -407,10 +409,12 @@ fn open_in_browser_now(app: &AppHandle) -> Result<(), String> {
 }
 
 fn open_share_window_now(app: &AppHandle) -> Result<(), String> {
+    let preference = snapshot_theme(app);
     if let Some(window) = app.get_webview_window("share") {
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
+        apply_share_window_theme(app, &preference);
         return Ok(());
     }
     WebviewWindowBuilder::new(app, "share", WebviewUrl::App("share.html".into()))
@@ -420,6 +424,7 @@ fn open_share_window_now(app: &AppHandle) -> Result<(), String> {
         .resizable(true)
         .visible(true)
         .center()
+        .theme(share_window_theme(&preference))
         .on_navigation(is_internal_url)
         .on_new_window(|url, _features| {
             let _ = open_external_url(&url);
@@ -548,7 +553,10 @@ fn enable_tailscale(runtime: &mut ShareRuntime, home: &Path) -> Result<(), Strin
         return Err("tailscale serve 立刻退出了。请看 logs/tailscale-serve.log。".into());
     }
     if let Err(err) = tailscale::wait_https_listed(&bin, https_port, Duration::from_secs(8)) {
-        eprintln!("desktop: {err}");
+        process.stop();
+        return Err(format!(
+            "Tailscale Serve 还没把 HTTPS 端口发出来。请稍后再开，或看 logs/tailscale-serve.log。({err})"
+        ));
     }
     post_control(
         runtime.sidecar_port,
@@ -581,7 +589,37 @@ fn persist(home: &Path, runtime: &ShareRuntime) {
     }
 }
 
+fn snapshot_theme(app: &AppHandle) -> String {
+    let Some(state) = app.try_state::<AppState>() else {
+        return "system".into();
+    };
+    let Ok(home) = state.home.lock() else {
+        return "system".into();
+    };
+    home.as_deref()
+        .map(paths::read_theme_preference)
+        .unwrap_or("system")
+        .to_string()
+}
+
+fn share_window_theme(preference: &str) -> Option<Theme> {
+    match preference {
+        "light" => Some(Theme::Light),
+        "dark" => Some(Theme::Dark),
+        _ => None,
+    }
+}
+
+fn apply_share_window_theme(app: &AppHandle, preference: &str) {
+    let Some(window) = app.get_webview_window("share") else {
+        return;
+    };
+    let _ = window.set_theme(share_window_theme(preference));
+}
+
 fn build_snapshot(app: &AppHandle, error: Option<String>) -> ShareSnapshot {
+    let theme_preference = snapshot_theme(app);
+    apply_share_window_theme(app, &theme_preference);
     let empty = ShareSnapshot {
         ready: false,
         nearby: NearbySnapshot {
@@ -602,6 +640,7 @@ fn build_snapshot(app: &AppHandle, error: Option<String>) -> ShareSnapshot {
             download_url: TAILSCALE_DOWNLOAD_URL,
         },
         error,
+        theme_preference,
     };
     let Some(state) = app.try_state::<AppState>() else {
         return empty;
@@ -663,6 +702,7 @@ fn build_snapshot(app: &AppHandle, error: Option<String>) -> ShareSnapshot {
             download_url: TAILSCALE_DOWNLOAD_URL,
         },
         error: empty.error,
+        theme_preference: empty.theme_preference,
     }
 }
 
@@ -697,7 +737,38 @@ fn conflict_message(body: &str) -> String {
 mod tests {
     use super::*;
     use std::io::{Read, Write};
-    use std::net::TcpListener;
+    use std::net::{TcpListener, TcpStream};
+
+    fn read_http_request(stream: &mut TcpStream) -> String {
+        let mut buf = Vec::new();
+        let mut tmp = [0_u8; 256];
+        loop {
+            let n = stream.read(&mut tmp).expect("read request");
+            if n == 0 {
+                break;
+            }
+            buf.extend_from_slice(&tmp[..n]);
+            let Some(split) = buf.windows(4).position(|window| window == b"\r\n\r\n") else {
+                continue;
+            };
+            let header_end = split + 4;
+            let headers = std::str::from_utf8(&buf[..header_end]).unwrap_or("");
+            let len = headers
+                .lines()
+                .find_map(|line| {
+                    line.split_once(':').and_then(|(name, value)| {
+                        name.eq_ignore_ascii_case("content-length")
+                            .then(|| value.trim().parse::<usize>().ok())
+                            .flatten()
+                    })
+                })
+                .unwrap_or(0);
+            if buf.len() >= header_end + len {
+                break;
+            }
+        }
+        String::from_utf8_lossy(&buf).into_owned()
+    }
 
     #[test]
     fn qr_svg_encodes_a_pairing_url() {
@@ -707,14 +778,20 @@ mod tests {
     }
 
     #[test]
+    fn share_window_theme_maps_preference() {
+        assert!(matches!(share_window_theme("light"), Some(Theme::Light)));
+        assert!(matches!(share_window_theme("dark"), Some(Theme::Dark)));
+        assert!(share_window_theme("system").is_none());
+        assert!(share_window_theme("sepia").is_none());
+    }
+
+    #[test]
     fn post_control_injects_the_token_and_parses_status() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let server = thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            let mut buf = [0_u8; 2048];
-            let n = stream.read(&mut buf).unwrap();
-            let req = String::from_utf8_lossy(&buf[..n]);
+            let req = read_http_request(&mut stream);
             assert!(req.contains("X-DSH-Token: secret"));
             assert!(req.contains("POST /__dshd_share"));
             let payload = r#"{"loopbackPort":9,"nearby":null,"tailscaleAudience":null,"addresses":[],"nearbyTicketUrl":null,"tailscaleTicketUrl":null}"#;
@@ -735,8 +812,7 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         let server = thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            let mut buf = [0_u8; 1024];
-            let _ = stream.read(&mut buf);
+            let _ = read_http_request(&mut stream);
             let payload = r#"{"error":"share gateway: no LAN address for nearby listen"}"#;
             let reply = format!(
                 "HTTP/1.1 409 Conflict\r\nContent-Length: {}\r\n\r\n{payload}",

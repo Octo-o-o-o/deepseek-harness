@@ -16,9 +16,9 @@ The absence also inverts the value of later work. Any improvement — notificati
 
 **The update entry lives in the tray, not the Web UI.** `frontendDist` points at the GUI shared with the browser surface, where an in-app updater is meaningless; putting the control there would require a desktop-only branch in shared code. The tray item re-labels itself from the check result (`Check for Updates` / `No Updates Available` / `Update to <version>` / `Installing Update…`) and is clickable only in the states where clicking does something.
 
-**The sidecar is stopped before the installer runs.** The installer replaces the bundled Node runtime and the deployed CLI; on Windows an open file cannot be replaced at all. `install_and_restart` calls `AppState::request_stop()` before handing control to the plugin.
+**The sidecar is stopped only after verified bytes are in hand.** The installer replaces the bundled Node runtime and the deployed CLI; on Windows an open file cannot be replaced at all. `run_install` downloads and signature-checks first, then `request_stop()`, then `install`. A failed download leaves the running session intact. A failed `install` after that stop cannot keep the session: the shell returns the main window to the start page so Restart is reachable.
 
-**Failures are silent.** An offline machine or an endpoint outage must not interrupt a session, so a failed check logs and leaves the tray showing the last known status. A `busy` flag makes a second click a no-op instead of a concurrent install of the same artifact.
+**Check failures are silent.** An offline machine or an endpoint outage must not interrupt a session, so a failed check logs and leaves the tray showing the last known status. A `busy` flag makes a second click a no-op instead of a concurrent install of the same artifact.
 
 `latest.json` is produced by `scripts/release/updater-manifest.ts`. Tauri signs the *artifact*, not the manifest — the manifest only carries the signature beside the URL — so publish order is itself a safety property: the script fails when `<artifact>.sig` is missing, which means a manifest can only be written after the artifacts it points at exist and are signed.
 

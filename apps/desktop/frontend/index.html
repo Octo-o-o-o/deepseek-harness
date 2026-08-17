@@ -12,12 +12,14 @@
         const status = document.getElementById('status')
         const detail = document.getElementById('detail')
         const openLogs = document.getElementById('open-logs')
-        if (!stage || !status || !detail || !openLogs) return
+        const restart = document.getElementById('restart-host')
+        if (!stage || !status || !detail || !openLogs || !restart) return
         stage.dataset.state = 'error'
         status.textContent = 'The local host did not become ready.'
         detail.hidden = false
         detail.textContent = String(message)
         openLogs.hidden = false
+        restart.hidden = false
       }
 
       window.__DSH_SHOW_MIGRATION__ = (message) => {
@@ -32,11 +34,18 @@
       }
 
       window.addEventListener('DOMContentLoaded', () => {
-        const openLogs = document.getElementById('open-logs')
-        openLogs.addEventListener('click', () => {
-          const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke
-          if (invoke) invoke('open_log_directory')
+        const invoke = (name) => {
+          const core = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke
+          if (core) return core(name)
+          const internals = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke
+          if (internals) return internals(name)
+        }
+        document.getElementById('open-logs').addEventListener('click', () => {
+          invoke('open_log_directory')
           if (window.__DSH_OPEN_LOGS__) window.__DSH_OPEN_LOGS__()
+        })
+        document.getElementById('restart-host').addEventListener('click', () => {
+          invoke('restart_for_plugins')
         })
       })
     </script>
@@ -51,6 +60,7 @@
       <p id="status">Starting the local host…</p>
       <p id="detail" hidden></p>
       <button id="open-logs" type="button" hidden>Open log directory</button>
+      <button id="restart-host" type="button" hidden>Restart local host</button>
     </main>
   </body>
 </html>

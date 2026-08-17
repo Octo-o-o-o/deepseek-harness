@@ -4,6 +4,8 @@
 
 Tauri 2 壳：在 `127.0.0.1` 上启动本地 `dsh web` sidecar，等待就绪行，校验 `__DSH_BOOT__` 与 `host.describe`，随后在 WebView 中加载既有的 Web GUI。
 
+在 macOS 上，主 WebView 会呈现 Safari.app 的 `Version/… Safari/…` user-agent 形式，以便运行 composer 的 textarea 恢复逻辑；Windows WebView2 是 Chromium，保持不变。
+
 ```
 ┌─────────────────────────────────────────────┐
 │  Tauri 2 shell (tray, single-instance)      │
@@ -83,7 +85,7 @@ xcrun notarytool history --apple-id "<Apple ID>" --team-id "<Team ID>" \
 复验成品 DMG。公证票据 staple 在 DMG 上，因此 `stapler validate` 取的是磁盘映像；挂载后的应用由 Gatekeeper 检查，其 `source=Notarized Developer ID` 才是双击时真正解析到的结果：
 
 ```sh
-xcrun stapler validate apps/desktop/dist/dshd-0.1.0-arm64.dmg
+xcrun stapler validate apps/desktop/dist/dshd-0.1.12-arm64.dmg
 codesign --verify --deep --strict --verbose=2 "/Volumes/dshd/dshd.app"
 spctl --assess --type execute --verbose=4 "/Volumes/dshd/dshd.app"
 ```
@@ -128,9 +130,9 @@ WebView 只允许加载内置起始页与回环 sidecar。其余导航一律拒�
 
 ## 在其他屏幕上打开
 
-sidecar 仍然只听 `127.0.0.1`。同一进程里仅 Desktop 安装的分享网关给外部浏览器发可撤销的 `dsh-share` cookie，只在跳到回环时注入启动 token。菜单 **在浏览器中打开**（⌘⇧B；托盘同名）会打开 `http://127.0.0.1:<gateway>/`，并在短窗口内接受回环配对；地址栏没有 ticket。**在其他设备上使用…** 打开壳自己的小窗，不进 Web 侧边栏。
+sidecar 仍然只听 `127.0.0.1`。同一进程里仅 Desktop 安装的分享网关给外部浏览器发可撤销的 `dsh-share` cookie，只在跳到回环时注入启动 token。菜单 **在浏览器中打开**（⌘⇧B；托盘同名）会打开 `http://127.0.0.1:<gateway>/`，并在短窗口内接受回环配对；地址栏没有 ticket。**在其他设备上使用…** 打开壳自己的小窗，不进 Web 侧边栏。小窗跟随主界面外观偏好（`ui-theme.preference`）。配对页强制浅色样式，避免手机深色模式把按钮反成看不见。
 
-附近默认关闭。打开后绑在所选 LAN IPv4 上（不是 `0.0.0.0`）；二维码是 `/p/<ticket>` 中间页，同源 POST 才消费。LAN 是明文 HTTP。**任何网络** 对网关回环端口跑前台 `tailscale serve`，HTTPS 端口由本功能独占，绝不 `off` 用户已有的 443 Serve。退出会停掉这个子进程。远程浏览器不能选文件夹、改设置或改密钥：这些方法继续 403，因为网关把它们的 Host 改写成 `dshd.share.internal`。开关在监听或 Serve 真正进入目标状态后写入 `desktop-state.json` 的 `{ nearby, tailscale }`；损坏的文件原样留下。
+附近默认关闭。打开后绑在所选 LAN IPv4 上（不是 `0.0.0.0`）；二维码是 `/p/<ticket>` 中间页，同源 POST 才消费（no-referrer form 带来的 `Origin: null` 按缺 Origin 处理）。LAN 是明文 HTTP。**任何网络** 对网关回环端口跑前台 `tailscale serve`，HTTPS 端口由本功能独占，绝不 `off` 用户已有的 443 Serve。退出会停掉这个子进程。远程浏览器不能选文件夹、改设置或改密钥：这些方法继续 403，因为网关把它们的 Host 改写成 `dshd.share.internal`。开关在监听或 Serve 真正进入目标状态后写入 `desktop-state.json` 的 `{ nearby, tailscale }`；损坏的文件原样留下。
 
 `overlay.rs` 仍然拒绝 sidecar argv 上的 `--host 0.0.0.0` 与 `--trusted-host`。
 

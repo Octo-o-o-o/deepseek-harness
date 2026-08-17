@@ -395,7 +395,7 @@ export class ShareGateway {
       return
     }
     if (!browserMarkersOk(req)) {
-      writeEmpty(res, 403)
+      writeHtml(res, 403, PAGE_USE_SAFARI, req.method)
       return
     }
     const ticket = this.tickets.get(ticketId)
@@ -414,13 +414,11 @@ export class ShareGateway {
     ticket.consumed = true
     const session = this.createSession(ticket.kind)
     const secure = ticket.kind === 'tailscale'
-    res.writeHead(303, {
-      'cache-control': 'no-store',
-      'referrer-policy': 'no-referrer',
-      location: '/',
+    // 200 + JS replace, not 303: several phone WebViews drop Set-Cookie on
+    // redirects, then GET `/` unauthenticated and look blank.
+    writeHtml(res, 200, PAGE_OPENING, req.method, {
       'set-cookie': shareCookie(session.id, secure),
     })
-    res.end()
   }
 
   private ticketListenerOk(listener: ListenerKind, kind: Ticket['kind']): boolean {
@@ -850,7 +848,8 @@ function browserMarkersOk(req: IncomingMessage): boolean {
   if (headerValue(req.headers['sec-fetch-site']) === 'cross-site') return false
   const origin = headerValue(req.headers.origin)
   const host = headerValue(req.headers.host)
-  if (origin === undefined) return true
+  // `Referrer-Policy: no-referrer` makes Chrome send Origin: null on a form POST.
+  if (origin === undefined || origin === 'null') return true
   /* v8 ignore next -- Origin is only sent with a Host on HTTP/1.1 */
   if (host === undefined) return false
   try {
@@ -1001,12 +1000,19 @@ async function closeServer(server: Server | undefined, sockets: Set<Duplex>): Pr
   await closed
 }
 
-function writeHtml(res: ServerResponse, status: number, body: string, method?: string): void {
+function writeHtml(
+  res: ServerResponse,
+  status: number,
+  body: string,
+  method?: string,
+  extra: Record<string, string> = {},
+): void {
   res.writeHead(status, {
     'cache-control': 'no-store',
     'referrer-policy': 'no-referrer',
     'content-type': 'text/html; charset=utf-8',
     'content-length': Buffer.byteLength(body),
+    ...extra,
   })
   if (method === 'HEAD') {
     res.end()
@@ -1075,10 +1081,47 @@ function refusalResponse(status: number): string {
   ].join('\r\n')
 }
 
-const PAGE_INTERSTITIAL = '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><meta name="referrer" content="no-referrer"/><title>打开 dshd</title></head><body><p>用手机相机扫码后会打开这台电脑上的 dshd。微信请选在 Safari 中打开。</p><form method="post" action=""><button type="submit">打开</button></form></body></html>'
+// Phone WebViews invert unstyled pages; pairing HTML pins light color-scheme.
+const PAIR_PAGE_CSS = 'html,body{margin:0;min-height:100%;background:#f4f5f3;color:#1a1d1a;color-scheme:light}'
+  + 'body{padding:1.5rem 1.25rem 2rem;font:17px/1.55 -apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI",sans-serif}'
+  + 'p{margin:0 0 1rem}a{color:#1a1d1a;font-weight:600}'
+  + 'button{display:block;width:100%;min-height:3rem;margin:1.25rem 0 0;border:0;border-radius:12px;'
+  + 'background:#1a1d1a;color:#fff;font:600 17px/1.2 inherit}'
 
-const PAGE_EXPIRED = '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"/><title>码已失效</title></head><body><p>此码已失效。请回到电脑上重新扫码。</p></body></html>'
+function pairingPage(title: string, inner: string): string {
+  return '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"/>'
+    + '<meta name="viewport" content="width=device-width,initial-scale=1"/>'
+    + '<meta name="color-scheme" content="light"/><meta name="referrer" content="no-referrer"/>'
+    + `<title>${title}</title><style>${PAIR_PAGE_CSS}</style></head><body>${inner}</body></html>`
+}
 
-const PAGE_NEED_PAIR = '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"/><title>请再点一次</title></head><body><p>请回到 Desktop 再点一次「在浏览器中打开」，或重新扫码。</p></body></html>'
+const PAGE_INTERSTITIAL = pairingPage(
+  '打开 dshd',
+  '<p>即将打开这台电脑上正在运行的 dshd。</p>'
+    + '<p>微信请选在 Safari 中打开，不要留在微信内置浏览器。</p>'
+    + '<form method="post" action=""><button type="submit">打开</button></form>'
+    + '<script>document.querySelector("form").addEventListener("submit",function(e){'
+    + 'e.preventDefault();'
+    + 'fetch("",{method:"POST",credentials:"same-origin"}).then(function(r){'
+    + 'if(r.ok)location.replace("/");else location.reload();'
+    + '});})</script>',
+)
 
-const PAGE_NOT_FOUND = '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"/><title>未找到</title></head><body><p>未找到。</p></body></html>'
+const PAGE_OPENING = pairingPage(
+  '正在打开',
+  '<p>正在打开…</p><p><a href="/">继续</a></p><script>location.replace("/")</script>',
+)
+
+const PAGE_USE_SAFARI = pairingPage(
+  '请用系统浏览器打开',
+  '<p>请用系统 Safari 或 Chrome 打开这个地址，不要用微信 / QQ 内置浏览器。</p>',
+)
+
+const PAGE_EXPIRED = pairingPage('码已失效', '<p>此码已失效。请回到电脑上重新扫码。</p>')
+
+const PAGE_NEED_PAIR = pairingPage(
+  '请再点一次',
+  '<p>请回到 Desktop 再点一次「在浏览器中打开」，或重新扫码。</p>',
+)
+
+const PAGE_NOT_FOUND = pairingPage('未找到', '<p>未找到。</p>')

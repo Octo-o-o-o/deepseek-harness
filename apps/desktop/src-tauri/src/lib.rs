@@ -29,6 +29,7 @@ mod tailscale;
 mod token;
 mod tray;
 mod update;
+mod webview_identity;
 
 use std::path::Path;
 use std::sync::Mutex;
@@ -44,7 +45,7 @@ use crate::logs::{install_panic_hook, open_logs_dir, rotate_sidecar_log, sidecar
 use crate::migrate::{
     default_legacy_home, inject_fault_from_env, migrate_legacy_home, MigrationReport,
 };
-use crate::navigation::is_internal_url;
+use crate::navigation::{is_internal_url, is_start_page};
 use crate::opener::open_external_url;
 use crate::paths::{
     default_dsh_home, default_workspace_cwd, ensure_desktop_state, resolve_desktop_patch,
@@ -70,6 +71,13 @@ pub struct AppState {
     /// Profile-manifest stamp taken while launching this sidecar; the running
     /// composition read its bundle list at that moment.
     profile_stamp: Mutex<Option<std::time::SystemTime>>,
+    /// Loopback origin after the WebView has navigated to the sidecar. History
+    /// back to the start page is refused while this is set, so a swipe cannot
+    /// restore the splash over a live sidecar. Cleared in [`Self::request_stop`].
+    sidecar_url: Mutex<Option<tauri::Url>>,
+    /// Bundled start-page URL captured before the sidecar navigation. Update
+    /// install failures use it to put the Restart control back on screen.
+    splash: Mutex<Option<tauri::Url>>,
 }
 
 impl AppState {
@@ -81,6 +89,9 @@ impl AppState {
             }
         }
         self.supervisor.request_stop();
+        if let Ok(mut url) = self.sidecar_url.lock() {
+            *url = None;
+        }
         if let Ok(home) = self.home.lock() {
             if let Some(home) = home.as_ref() {
                 clear_sidecar_pid(home);
@@ -113,6 +124,8 @@ pub fn run() {
             share: Mutex::new(None),
             _lock: Mutex::new(None),
             profile_stamp: Mutex::new(None),
+            sidecar_url: Mutex::new(None),
+            splash: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             open_log_directory,
@@ -146,6 +159,11 @@ pub fn run() {
                 let exe = std::env::current_exe().unwrap_or_else(|_| Path::new(".").to_path_buf());
                 let cwd = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
                 let splash = splash_url(&window);
+                if let Some(state) = handle.try_state::<AppState>() {
+                    if let Ok(mut guard) = state.splash.lock() {
+                        *guard = splash.clone();
+                    }
+                }
                 if let Err(message) =
                     boot_and_navigate(&handle, &window, &exe, &cwd, splash.as_ref())
                 {
@@ -218,8 +236,18 @@ fn build_main_window(app: &AppHandle) -> tauri::Result<tauri::WebviewWindow> {
         .first()
         .cloned()
         .ok_or_else(|| tauri::Error::WindowNotFound)?;
-    WebviewWindowBuilder::from_config(app, &config)?
-        .on_navigation(|url| {
+    let handle = app.clone();
+    let builder = WebviewWindowBuilder::from_config(app, &config)?
+        .on_navigation(move |url| {
+            if is_start_page(url) {
+                if let Some(sidecar) = live_sidecar_url(&handle) {
+                    if let Some(window) = handle.get_webview_window("main") {
+                        let _ = window.navigate(sidecar);
+                    }
+                    return false;
+                }
+                return true;
+            }
             if is_internal_url(url) {
                 return true;
             }
@@ -229,8 +257,10 @@ fn build_main_window(app: &AppHandle) -> tauri::Result<tauri::WebviewWindow> {
         .on_new_window(|url, _features| {
             let _ = open_external_url(&url);
             NewWindowResponse::Deny
-        })
-        .build()
+        });
+    #[cfg(target_os = "macos")]
+    let builder = builder.user_agent(webview_identity::MACOS_SAFARI_WEBVIEW_USER_AGENT);
+    builder.build()
 }
 
 fn boot_and_navigate(
@@ -373,6 +403,9 @@ fn boot_and_navigate(
         state.request_stop();
         return Err(err);
     }
+    // The WebView is already on the sidecar; publish before the client-ready
+    // wait so a swipe-back during that window cannot restore the splash.
+    remember_sidecar_origin(&state, port);
     if inject_boot_fault("client-ready") {
         state.request_stop();
         return Err("injected fault: desktop client ready wait".into());
@@ -454,15 +487,58 @@ fn plugins_pending_restart(state: tauri::State<'_, AppState>) -> bool {
 
 /// Restart the application so the composition re-reads the profile manifest.
 ///
-/// Stops the sidecar through the same entry a quit takes, so the child never
-/// outlives the shell and its data directory lock is released before the new
-/// process asks for it. `restart` replaces this process and does not return.
+/// The start page also calls this after a boot or sidecar failure: a full
+/// process restart is the smallest recovery that releases the home lock and
+/// respawns the sidecar. Stops the sidecar through the same entry a quit
+/// takes, so the child never outlives the shell. `restart` replaces this
+/// process and does not return.
 #[tauri::command]
 fn restart_for_plugins(app: AppHandle) {
     if let Some(state) = app.try_state::<AppState>() {
         state.request_stop();
     }
     app.restart();
+}
+
+/// Record the loopback origin so history back cannot restore the start page.
+///
+/// # Parameters
+/// - `state`: shared runtime state.
+/// - `port`: sidecar loopback port already confirmed by WebView navigation.
+fn remember_sidecar_origin(state: &AppState, port: u16) {
+    if let Ok(origin) = tauri::Url::parse(&format!("http://127.0.0.1:{port}/")) {
+        if let Ok(mut guard) = state.sidecar_url.lock() {
+            *guard = Some(origin);
+        }
+    }
+}
+
+/// Return the main window to the bundled start page and show `message`.
+///
+/// Callers must have already stopped the sidecar and cleared
+/// [`AppState::sidecar_url`]; otherwise `on_navigation` refuses the start page.
+///
+/// # Parameters
+/// - `app`: handle used to reach the main window and the captured splash URL.
+/// - `message`: text shown on the start-page error state.
+pub(crate) fn recover_main_to_splash(app: &AppHandle, message: &str) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let splash = app
+        .try_state::<AppState>()
+        .and_then(|state| state.splash.lock().ok().and_then(|guard| guard.clone()));
+    show_error(&window, splash.as_ref(), message);
+}
+
+/// Loopback origin of the live sidecar, if the WebView has navigated to it.
+fn live_sidecar_url(app: &AppHandle) -> Option<tauri::Url> {
+    let state = app.try_state::<AppState>()?;
+    state
+        .sidecar_url
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone())
 }
 
 /// Test injection point named by `DSH_DESKTOP_BOOT_FAIL`: `client-ready`

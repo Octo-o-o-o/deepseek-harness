@@ -18,11 +18,24 @@ const SIDECAR_HOST: &str = "127.0.0.1";
 /// `true` for the bundled start page and the loopback sidecar, `false` for
 /// everything else.
 pub fn is_internal_url(url: &tauri::Url) -> bool {
+    is_start_page(url)
+        || matches!(
+            (url.scheme(), url.host_str()),
+            ("http" | "https", Some(SIDECAR_HOST))
+        )
+}
+
+/// Whether `url` is the bundled start page, not the loopback sidecar.
+///
+/// # Parameters
+/// - `url`: navigation target reported by the WebView.
+///
+/// # Returns
+/// `true` for `tauri://` / `asset://` and `http(s)://tauri.localhost`.
+pub fn is_start_page(url: &tauri::Url) -> bool {
     match url.scheme() {
-        // The bundled start page: `tauri://localhost` on macOS and Linux,
-        // `http://tauri.localhost` on Windows, plus the asset protocol.
         "tauri" | "asset" => true,
-        "http" | "https" => matches!(url.host_str(), Some(SIDECAR_HOST) | Some("tauri.localhost")),
+        "http" | "https" => url.host_str() == Some("tauri.localhost"),
         _ => false,
     }
 }
@@ -43,6 +56,9 @@ mod tests {
             "http://127.0.0.1:51010/session/1?x=2"
         )));
         assert!(is_internal_url(&url("http://tauri.localhost/index.html")));
+        assert!(is_start_page(&url("tauri://localhost/")));
+        assert!(is_start_page(&url("http://tauri.localhost/index.html")));
+        assert!(!is_start_page(&url("http://127.0.0.1:51010/")));
     }
 
     #[test]

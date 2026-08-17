@@ -22,7 +22,7 @@ The temporary native overflow can leave the draft scrollport's auto height at th
 
 ## Verification
 
-Component tests synthesize Safari's stale metrics, assert the textarea-then-scrollport invalidation order, preserve selection, and prove that a growing native draft reads no geometry. Browser-identity tests cover desktop and mobile Safari, desktop Chromium, Chrome, Edge, and Opera on iOS, and an Apple web view.
+Component tests synthesize Safari's stale metrics, assert the textarea-then-scrollport invalidation order, preserve selection, and prove that a growing native draft reads no geometry. Browser-identity tests cover desktop and mobile Safari, desktop Chromium, Chrome, Edge, and Opera on iOS, an Apple web view, an unadorned macOS WKWebView, and a WKWebView that presents Safari.app tokens. macOS dshd supplies those tokens in the WebView User-Agent ([desktop identity](2026-08-17-desktop-wkwebview-safari-identity.md)); the detector itself is unchanged.
 
 The assembled package is also exercised in Safari 26.5.2 through the native 51-character-to-50-character Backspace path. Playwright WebKit 26.5 settles correctly without the workaround in both the assembled app and a reduced page, so the repository's Chromium browser lane cannot reproduce this Safari application defect; the focused component test pins the engine state until an automatable Safari lane exists.
 

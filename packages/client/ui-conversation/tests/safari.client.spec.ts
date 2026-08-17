@@ -47,6 +47,19 @@ describe('Safari browser detection', () => {
       userAgent: 'Mozilla/5.0 (iPhone) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
       expected: false,
     },
+    {
+      name: 'unadorned macOS WKWebView',
+      vendor: 'Apple Computer, Inc.',
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)',
+      expected: false,
+    },
+    {
+      // Byte-identical to apps/desktop/src-tauri/src/webview_identity.rs.
+      name: 'macOS WKWebView presenting Safari.app tokens',
+      vendor: 'Apple Computer, Inc.',
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Safari/605.1.15',
+      expected: true,
+    },
   ])('identifies $name', ({ vendor, userAgent, expected }) => {
     expect(isSafariBrowser({ vendor, userAgent })).toBe(expected)
   })

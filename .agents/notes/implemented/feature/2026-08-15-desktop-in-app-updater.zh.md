@@ -16,9 +16,9 @@ Status: implemented
 
 **更新入口放在托盘，不放 Web UI。** `frontendDist` 指向的是与浏览器形态共用的 GUI，在那里做应用内更新没有意义；把控件放进去还要在共用代码里加桌面专属分支。托盘项按检查结果自改文案（`Check for Updates` / `No Updates Available` / `Update to <版本>` / `Installing Update…`），且只在点击真会产生动作的状态下可点。
 
-**安装器运行前先停 sidecar。** 安装器要替换内嵌 Node 运行时与已部署的 CLI；在 Windows 上，打开中的文件根本无法替换。`install_and_restart` 在把控制权交给插件之前调用 `AppState::request_stop()`。
+**先拿到已验签的字节，再停 sidecar。** 安装器要替换内嵌 Node 运行时与已部署的 CLI；在 Windows 上，打开中的文件根本无法替换。`run_install` 先下载并验签，再 `request_stop()`，最后 `install`。下载失败时正在跑的会话还在。这次 stop 之后的 `install` 失败保不住会话：壳把主窗口带回启动页，让 Restart 可点。
 
-**失败一律静默。** 离线或 endpoint 故障不得打断会话，因此检查失败只记录日志，托盘保留上次已知状态。`busy` 标志让第二次点击成为空操作，而不是对同一产物发起并发安装。
+**检查失败静默。** 离线或 endpoint 故障不得打断会话，因此检查失败只记录日志，托盘保留上次已知状态。`busy` 标志让第二次点击成为空操作，而不是对同一产物发起并发安装。
 
 `latest.json` 由 `scripts/release/updater-manifest.ts` 产出。Tauri 签的是**产物**而非清单——清单只是在 URL 旁携带签名——因此发布顺序本身就是一项安全属性：缺少 `<artifact>.sig` 时脚本直接失败，这意味着清单只能在它所指向的产物已存在且已签名之后才被写出。
 

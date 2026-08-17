@@ -93,7 +93,7 @@ Codex 证伪后必须改的：外部浏览器不得持有启动 token；关开�
 - 注入脚本：**没有 nonce 时不得 POST bootstrap**，`__DSH_DESKTOP_BOOTSTRAP_DONE__` 直接 resolve。否则外部页会卡在 rejected Promise 上（`desktop-bootstrap.ts` 注入 + `connection.ts` await）。
 - 外部浏览器只拿 `dsh-share`。网关转发时加 `X-DSH-Token`。
 - **本机打开浏览器**：点击后开启数秒的回环配对窗，`open http://127.0.0.1:<gw>/`，ticket 不进 argv。
-- **扫码**：`GET /p/<ticket>` 用 **prefix `/p`**（WebServer 没有参数路由）返回 `no-store`、`Referrer-Policy: no-referrer` 的内联页，同源 POST 才消费票、种 `dsh-share`、`location.replace('/')`。防止扫码器/微信预取消费。票 ≥128 bit、单次、短 TTL、绑精确 authority。
+- **扫码**：`GET /p/<ticket>` 用 **prefix `/p`**（WebServer 没有参数路由）返回 `no-store`、`Referrer-Policy: no-referrer`、强制浅色 color-scheme 的内联页，同源 POST 才消费票、种 `dsh-share`、以 200 HTML 再 `location.replace('/')`（不用 303）。防止扫码器/微信预取消费。票 ≥128 bit、单次、短 TTL、绑精确 authority。
 - 控制面 `POST /__dshd_share` 只接受 **header** token + 主 sidecar 的回环 Host，网关不转发。
 
 ### 3.2 网关

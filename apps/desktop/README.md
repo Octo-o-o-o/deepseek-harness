@@ -4,6 +4,8 @@ English | [中文](README.zh.md)
 
 Tauri 2 shell that starts a local `dsh web` sidecar on `127.0.0.1`, waits for the ready line, checks `__DSH_BOOT__` and `host.describe`, then loads the existing Web GUI in a WebView.
 
+On macOS the main WebView presents Safari.app's `Version/… Safari/…` user-agent form so the composer textarea recovery runs; Windows WebView2 is Chromium and is left unchanged.
+
 ```
 ┌─────────────────────────────────────────────┐
 │  Tauri 2 shell (tray, single-instance)      │
@@ -83,7 +85,7 @@ The preflight runs before the build, so a credential problem costs seconds rathe
 Verify a finished DMG. The notarization ticket is stapled to the DMG, so `stapler validate` takes the disk image; the mounted application is checked by Gatekeeper, whose `source=Notarized Developer ID` is what a double-click resolves:
 
 ```sh
-xcrun stapler validate apps/desktop/dist/dshd-0.1.0-arm64.dmg
+xcrun stapler validate apps/desktop/dist/dshd-0.1.12-arm64.dmg
 codesign --verify --deep --strict --verbose=2 "/Volumes/dshd/dshd.app"
 spctl --assess --type execute --verbose=4 "/Volumes/dshd/dshd.app"
 ```
@@ -128,9 +130,9 @@ The shell always generates a per-launch hex token and a bootstrap nonce and inje
 
 ## Opening on another screen
 
-The sidecar stays on `127.0.0.1`. A Desktop-only share gateway in the same process issues a revocable `dsh-share` cookie to other browsers and injects the launch token only on the hop to loopback. Menu **Open in Browser** (⌘⇧B; tray: **在浏览器中打开**) opens `http://127.0.0.1:<gateway>/` during a short loopback pairing window; the URL has no ticket. **Use on Another Device…** (**在其他设备上使用…**) opens a shell window, not a Web sidebar.
+The sidecar stays on `127.0.0.1`. A Desktop-only share gateway in the same process issues a revocable `dsh-share` cookie to other browsers and injects the launch token only on the hop to loopback. Menu **Open in Browser** (⌘⇧B; tray: **在浏览器中打开**) opens `http://127.0.0.1:<gateway>/` during a short loopback pairing window; the URL has no ticket. **Use on Another Device…** (**在其他设备上使用…**) opens a shell window, not a Web sidebar. That window follows the Appearance preference (`ui-theme.preference`). Pairing pages force light CSS so a phone in dark mode still shows the Open button.
 
-Nearby is off by default. Turning it on binds the chosen LAN IPv4 (not `0.0.0.0`); the QR is a `/p/<ticket>` interstitial that a same-origin POST consumes. LAN is plaintext HTTP. **Anywhere** runs a foreground `tailscale serve` at the gateway loopback port on an HTTPS port this feature owns, and never `off`s an existing 443 Serve. Quit stops that child. Remote browsers cannot pick folders, change settings, or change credentials: those methods stay 403 because the gateway rewrites their Host to `dshd.share.internal`. Switches persist in `desktop-state.json` as `{ nearby, tailscale }` after the listen or Serve actually reaches that state; a corrupt file is left untouched.
+Nearby is off by default. Turning it on binds the chosen LAN IPv4 (not `0.0.0.0`); the QR is a `/p/<ticket>` interstitial that a same-origin POST consumes (`Origin: null` from a no-referrer form counts as missing Origin). LAN is plaintext HTTP. **Anywhere** runs a foreground `tailscale serve` at the gateway loopback port on an HTTPS port this feature owns, and never `off`s an existing 443 Serve. Quit stops that child. Remote browsers cannot pick folders, change settings, or change credentials: those methods stay 403 because the gateway rewrites their Host to `dshd.share.internal`. Switches persist in `desktop-state.json` as `{ nearby, tailscale }` after the listen or Serve actually reaches that state; a corrupt file is left untouched.
 
 `overlay.rs` still refuses `--host 0.0.0.0` and `--trusted-host` on the sidecar argv.
 
