@@ -1,5 +1,5 @@
 {
-  "cli": "0.1.0-rc.5",
+  "cli": "0.1.0-rc.7",
   "node": "24.19.0",
   "platforms": {
     "darwin-arm64": {
