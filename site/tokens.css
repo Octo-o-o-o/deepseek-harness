@@ -1,0 +1,364 @@
+/* ============================================================
+   Design Tokens — 纸上账本(DSHD 官网拷贝件;定义源 SayDo 仓 packages/console/src/styles/tokens.css,docs/11 §2)
+
+   三层结构(2026-08-13 全端标准化批):
+     ① 矿彩原色层  纸上账本定稿色的唯一字面量出处,不随主题变化。
+                    移动壳 mobile.css 的 --m-* 全部别名到这一层,
+                    因此手机在 data-theme=dark 下仍是纸(M1 无暗色设计)。
+     ② 夜色原色层  Dark 暂留的玻璃夜色字面量,只在这里出现一次。
+     ③ 语义层      表面/文字/交互态/语义四态/品牌朱/线与影;
+                    Light 消费①,Dark 消费②。组件只许消费这一层。
+
+   红线:Light 核心色值已定稿(宣纸/松烟墨/黛蓝/松绿/赭石/印泥朱/暖灰系)不得改;
+   移动五级字阶数值真机验收定稿不得改(此处只是把定义位置上移到共享层)。
+   Dark = 夜账本二期,本批只保证切暗不破版,不做调色。
+   改 token 走轻量评审回写 docs/11;组件内禁写死色值(门禁见 scripts/check-hardcoded-colors.sh)。
+   ============================================================ */
+
+:root {
+  /* ---- 字体(11 §2.1) ---- */
+  --font-body: 'PingFang SC', 'HarmonyOS Sans SC', 'MiSans', 'Hiragino Sans GB',
+    'Microsoft YaHei', -apple-system, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Menlo', 'Cascadia Code',
+    'Source Han Mono SC', monospace;
+  --font-display: 'Songti SC', 'Noto Serif SC', serif;
+  --font-ledger: 'Songti SC', STSong, SimSun, serif;
+
+  /* ---- 桌面字号与行高(11 §2.2,固定值不随视口缩放) ---- */
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 15px;
+  --text-md: 16px;
+  --text-lg: 19px;
+  --text-xl: 24px;
+  --text-2xl: 32px;
+  --text-3xl: 42px;
+  --leading-tight: 1.3;
+  --leading-body: 1.8;
+  --leading-data: 1.5;
+
+  /* ---- 移动五级字阶(真机验收定稿,数值一个不许动;定义位置上移到共享层)----
+     15/13/16/12 与桌面同值,直接指向桌面档;20/17/11 是移动专有档。 */
+  --m-fs-title: 20px;
+  --m-fs-card: 17px;
+  --m-fs-body: var(--text-base);
+  --m-fs-secondary: var(--text-sm);
+  --m-fs-btn: var(--text-md);
+  --m-fs-btn-sub: var(--text-xs);
+  --m-fs-chip: 11px;
+
+  /* ---- 圆角(11 §2.3;纸感刻度,卡片 10 / 按钮 8 / 小件 4)---- */
+  --radius-2xs: 4px;
+  --radius-xs: 8px;
+  --radius-sm: 10px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 14px;
+  --radius-pill: 999px;
+  /* 票据类不对称角(移动先例;2px 起的"裁纸口") */
+  --radius-ledger: 3px 12px 4px 10px;
+  --radius-ledger-lg: 2px 14px 3px 9px;
+  --radius-ledger-sm: 2px 10px 3px 8px;
+
+  /* ---- 间距 ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 72px;
+
+  /* ---- 布局 ---- */
+  --h-titlebar: 52px;
+  --w-sidebar: 232px;
+  --shell-gutter: 20px;
+  --z-setup-overlay: 30;
+
+  /* ---- 密度(11 §3;紧凑模式 data-density=compact 覆盖) ---- */
+  --row-h-table: 40px;
+  --row-h-list: 52px;
+
+  /* ---- 动效(11 §2.4) ---- */
+  --duration-fast: 140ms;
+  --duration-base: 220ms;
+  --duration-slow: 420ms;
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.3, 0.5, 1);
+
+  /* ============ ① 矿彩原色层(定稿;字面量唯一出处,不随主题变化)============ */
+  /* 纸面 */
+  --paper: #f0ede4;        /* 宣纸:画布 */
+  --paper-card: #faf7ef;   /* 纸面:卡片 */
+  --paper-raised: #fcfaf4; /* 抬升纸面:顶栏/侧栏/模态/浮层 */
+  --paper-soft: rgb(250 247 239 / 68%);    /* 弱化纸面:骨架块/浅底区 */
+  --paper-control: rgb(250 247 239 / 80%); /* 控件面:输入/下拉 */
+  /* 墨 */
+  --ink: #34332e;          /* 松烟墨 */
+  --ink-secondary: #5b564b;
+  --ink-muted: #706b61;
+  --ink-gray: #8b8578;     /* 暖灰·中(移动球权灰/连接条) */
+  --ink-faint: #a29b8f;    /* 暖灰·浅(桌面球权灰/占位) */
+  --ink-wash: rgb(52 51 46 / 5%);      /* 墨水洗:悬停/选中底 */
+  --paper-scrim: rgb(52 51 46 / 42%);  /* 模态遮罩 */
+  /* 矿彩四色 + 各自的淡边与淡底 */
+  --ochre: #a8641f;                      /* 赭石 */
+  --ochre-wash: rgb(168 100 31 / 5%);
+  --ochre-line: rgb(168 100 31 / 42%);
+  --indigo: #3c5f96;                     /* 黛蓝 */
+  --indigo-wash: rgb(60 95 150 / 9%);
+  --indigo-line: rgb(60 95 150 / 34%);
+  --pine: #41755a;                       /* 松绿 */
+  --pine-wash: rgb(65 117 90 / 6%);
+  --pine-line: rgb(65 117 90 / 42%);
+  --seal: #b13a2b;                       /* 印泥朱 = 品牌朱 */
+  --seal-wash: rgb(177 58 43 / 6%);
+  --seal-line: rgb(177 58 43 / 42%);
+  /* 线与纸纹 */
+  --rule: #cec6b7;                  /* 墨线 */
+  --rule-soft: rgb(206 198 183 / 62%); /* 软线:虚线框/连接线 */
+  --rule-line: rgb(98 82 58 / 4%);  /* 账页格纹底线 */
+  --paper-glow-a: rgb(168 100 31 / 5%);   /* 画布赭石色渍 */
+  --paper-glow-b: rgb(60 95 150 / 4.5%);  /* 画布黛蓝色渍 */
+  /* 反白前景(饱和底上的字) */
+  --paper-fg: #fffaf0;
+  --paper-fg-dim: rgb(255 250 240 / 78%);
+  --seal-fg: #fff8ed;      /* 印泥朱底上的反白(略暖,印面观感) */
+  /* 暖影(rgb(75 64 47) 系;移动壳直接消费,不随主题变化) */
+  --paper-shadow: 0 1px 2px rgb(75 64 47 / 5%), 0 8px 24px rgb(75 64 47 / 9%);
+  --paper-shadow-hover: 0 2px 4px rgb(75 64 47 / 6%), 0 14px 40px rgb(75 64 47 / 13%);
+  --paper-shadow-soft: 0 4px 12px rgb(75 64 47 / 7%);
+  --paper-shadow-modal: 0 16px 48px rgb(75 64 47 / 20%);
+  --paper-shadow-drawer: 18px 0 42px rgb(52 51 46 / 18%);
+  --paper-shadow-ink: 0 8px 22px rgb(60 95 150 / 25%);
+  --paper-shadow-titlebar: 0 1px 0 rgb(75 64 47 / 8%);
+  --paper-code-bg: rgb(52 51 46 / 5.5%);
+  --paper-code-block-bg: rgb(250 247 239 / 75%);
+
+  /* ============ ② 夜色原色层(Dark 暂留玻璃夜色;夜账本二期整批替换)============ */
+  --night-bg: #12161f;
+  --night-surface: rgb(26 32 45 / 62%);
+  --night-surface-raised: rgb(30 37 52 / 82%);
+  --night-surface-soft: rgb(26 32 45 / 40%);
+  --night-surface-control: rgb(38 46 64 / 55%);
+  --night-ink-wash: rgb(232 236 244 / 4.5%);
+  --night-scrim: rgb(8 10 16 / 55%);
+  --night-line: rgb(232 236 244 / 9%);
+  --night-line-soft: rgb(232 236 244 / 13%);
+  --night-text: #e8ecf4;
+  --night-text-secondary: #a8b2c4;
+  --night-text-muted: #6e7a90;
+  --night-text-faint: #515c70;
+  --night-fg-on-fill: #12161f;
+  --night-active: #7aa5f7;
+  --night-success: #5cab7d;
+  --night-warning: #cfa050;
+  --night-error: #d47f7f;
+  --night-info: #6f9bd1;
+  --night-seal: #c9563f;
+  --night-seal-fg: #1a120e;
+  --night-active-fg: #0f1420;
+  --night-glow-a: rgb(84 118 190 / 13%);
+  --night-glow-b: rgb(150 122 84 / 7%);
+  --night-active-wash: rgb(122 165 247 / 12%);
+  --night-active-line: rgb(122 165 247 / 38%);
+  --night-success-wash: rgb(92 171 125 / 12%);
+  --night-warning-wash: rgb(207 160 80 / 12%);
+  --night-error-wash: rgb(212 127 127 / 12%);
+  --night-seal-line: rgb(201 86 63 / 45%);
+  --night-shadow: 0 1px 2px rgb(0 0 0 / 20%), 0 10px 30px rgb(0 0 0 / 30%);
+  --night-shadow-hover: 0 2px 4px rgb(0 0 0 / 25%), 0 16px 48px rgb(0 0 0 / 42%);
+  --night-shadow-modal: 0 16px 48px rgb(0 0 0 / 50%);
+  --night-shadow-titlebar: 0 1px 0 rgb(0 0 0 / 25%);
+  --night-code-bg: rgb(232 236 244 / 7%);
+  --night-code-block-bg: rgb(16 20 30 / 66%);
+
+  /* ---- 交互态(11 §2.6/§9;两端同一组,值随主题的 active-ink/ink-wash 走) ---- */
+  --focus-ring: var(--active-ink);
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+  --hover-wash: var(--surface-ink-wash);
+  --selected-wash: var(--active-ink-wash);
+  --disabled-opacity: 0.45;
+  --dimmed-opacity: 0.58;  /* 降级可用(非禁用):离线/重连中的输入条 */
+}
+
+/* ============ 紧凑模式(11 §3;顶栏切换 + localStorage 持久)============ */
+/* 密度只压行高与页距,不改字号/圆角(11 §0 密度让位于可读性)。 */
+:root[data-density='compact'] {
+  --row-h-table: 32px;
+  --row-h-list: 40px;
+  --shell-gutter: 14px;
+  --space-5: 18px;
+}
+:root[data-density='compact'] table tr {
+  height: var(--row-h-table);
+}
+
+/* ============ ③ 语义层 · Light — 纸上账本(消费矿彩原色层)============ */
+:root,
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  /* 画布:宣纸 + 赭石/黛蓝极弱色渍(纸不发光,只有渍) */
+  --bg-app: var(--paper);
+  --bg-glow-a: var(--paper-glow-a);
+  --bg-glow-b: var(--paper-glow-b);
+
+  /* 表面三级 + 控件面 + 洗底 + 遮罩(纸是实底,不再有半透明玻璃面) */
+  --surface: var(--paper-card);
+  --surface-raised: var(--paper-raised);
+  --surface-soft: var(--paper-soft);
+  --surface-control: var(--paper-control);
+  --surface-ink-wash: var(--ink-wash);
+  --scrim: var(--paper-scrim);
+
+  /* 线 */
+  --line: var(--rule);
+  --line-soft: var(--rule-soft);
+
+  /* 文字四级 + 反白前景 */
+  --text-primary: var(--ink);
+  --text-secondary: var(--ink-secondary);
+  --text-muted: var(--ink-muted);
+  --text-faint: var(--ink-faint);
+  --fg-on-fill: var(--paper-fg);
+
+  /* 交互强调:黛蓝(浏览/导航/选择) */
+  --active-ink: var(--indigo);
+  --active-ink-fg: var(--paper-fg);
+  --active-ink-wash: var(--indigo-wash);
+  --active-ink-border: var(--indigo-line);
+
+  /* 语义四态:松绿/赭石/印泥朱/黛蓝 */
+  --color-success: var(--pine);
+  --color-success-wash: var(--pine-wash);
+  --color-warning: var(--ochre);
+  --color-warning-wash: var(--ochre-wash);
+  --color-error: var(--seal);
+  --color-error-wash: var(--seal-wash);
+  --color-info: var(--indigo);
+
+  /* 品牌朱(盖章):承诺型/终局动作与品牌印记;与 error 同值,语义分名 */
+  --brand-seal: var(--seal);
+  --brand-seal-fg: var(--seal-fg);
+  --brand-seal-border: var(--seal-line);
+
+  /* 影(暖影) */
+  --shadow-card: var(--paper-shadow);
+  --shadow-card-hover: var(--paper-shadow-hover);
+  --shadow-modal: var(--paper-shadow-modal);
+  --shadow-titlebar: var(--paper-shadow-titlebar);
+
+  --code-bg: var(--paper-code-bg);
+  --code-block-bg: var(--paper-code-block-bg);
+  --noise-opacity: 0.035;
+
+}
+
+/* ============ ③ 语义层 · Dark — 夜雾蓝工作灯(消费夜色原色层;二期换夜账本)============ */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg-app: var(--night-bg);
+  --bg-glow-a: var(--night-glow-a);
+  --bg-glow-b: var(--night-glow-b);
+
+  --surface: var(--night-surface);
+  --surface-raised: var(--night-surface-raised);
+  --surface-soft: var(--night-surface-soft);
+  --surface-control: var(--night-surface-control);
+  --surface-ink-wash: var(--night-ink-wash);
+  --scrim: var(--night-scrim);
+
+  --line: var(--night-line);
+  --line-soft: var(--night-line-soft);
+
+  --text-primary: var(--night-text);
+  --text-secondary: var(--night-text-secondary);
+  --text-muted: var(--night-text-muted);
+  --text-faint: var(--night-text-faint);
+  --fg-on-fill: var(--night-fg-on-fill);
+
+  --active-ink: var(--night-active);
+  --active-ink-fg: var(--night-active-fg);
+  --active-ink-wash: var(--night-active-wash);
+  --active-ink-border: var(--night-active-line);
+
+  --color-success: var(--night-success);
+  --color-success-wash: var(--night-success-wash);
+  --color-warning: var(--night-warning);
+  --color-warning-wash: var(--night-warning-wash);
+  --color-error: var(--night-error);
+  --color-error-wash: var(--night-error-wash);
+  --color-info: var(--night-info);
+
+  --brand-seal: var(--night-seal);
+  --brand-seal-fg: var(--night-seal-fg);
+  --brand-seal-border: var(--night-seal-line);
+
+  --shadow-card: var(--night-shadow);
+  --shadow-card-hover: var(--night-shadow-hover);
+  --shadow-modal: var(--night-shadow-modal);
+  --shadow-titlebar: var(--night-shadow-titlebar);
+
+  --code-bg: var(--night-code-bg);
+  --code-block-bg: var(--night-code-block-bg);
+  --noise-opacity: 0.05;
+}
+
+/* 跟随系统(未手动指定主题时;11 §2.5 缺省跟随系统)。
+   与上方 Dark 块逐条同构——两处都只做「语义名 → 夜色原色层」的指派,
+   夜色字面量仍只在 ② 出现一次。 */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+
+    --bg-app: var(--night-bg);
+    --bg-glow-a: var(--night-glow-a);
+    --bg-glow-b: var(--night-glow-b);
+
+    --surface: var(--night-surface);
+    --surface-raised: var(--night-surface-raised);
+    --surface-soft: var(--night-surface-soft);
+    --surface-control: var(--night-surface-control);
+    --surface-ink-wash: var(--night-ink-wash);
+    --scrim: var(--night-scrim);
+
+    --line: var(--night-line);
+    --line-soft: var(--night-line-soft);
+
+    --text-primary: var(--night-text);
+    --text-secondary: var(--night-text-secondary);
+    --text-muted: var(--night-text-muted);
+    --text-faint: var(--night-text-faint);
+    --fg-on-fill: var(--night-fg-on-fill);
+
+    --active-ink: var(--night-active);
+    --active-ink-fg: var(--night-active-fg);
+    --active-ink-wash: var(--night-active-wash);
+    --active-ink-border: var(--night-active-line);
+
+    --color-success: var(--night-success);
+    --color-success-wash: var(--night-success-wash);
+    --color-warning: var(--night-warning);
+    --color-warning-wash: var(--night-warning-wash);
+    --color-error: var(--night-error);
+    --color-error-wash: var(--night-error-wash);
+    --color-info: var(--night-info);
+
+    --brand-seal: var(--night-seal);
+    --brand-seal-fg: var(--night-seal-fg);
+    --brand-seal-border: var(--night-seal-line);
+
+    --shadow-card: var(--night-shadow);
+    --shadow-card-hover: var(--night-shadow-hover);
+    --shadow-modal: var(--night-shadow-modal);
+    --shadow-titlebar: var(--night-shadow-titlebar);
+
+    --code-bg: var(--night-code-bg);
+    --code-block-bg: var(--night-code-block-bg);
+    --noise-opacity: 0.05;
+  }
+}

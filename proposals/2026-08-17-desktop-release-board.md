@@ -68,12 +68,20 @@
 
 - [x] S1–S5 落地，聚焦测试绿（`cargo test` 99；clippy `-D warnings`；share-gateway / safari / desktop-bootstrap / ui-plugin-restart 72）
 - [x] 代码复审（缺陷优先）：安装失败回 splash + `sidecar_url` 提前写入，已闭合；无剩余发版阻断
-- [ ] 提交并 `git push fork master`（用户要求上 Release）
-- [ ] `pnpm run release:desktop-mac` 公证 DMG
-- [ ] `stapler validate` + Gatekeeper `spctl`
-- [ ] GitHub Release `dshd-v0.1.12` 附 DMG、SHA256、`.app.tar.gz` + `.sig`
-- [ ] 上传 R2 内容寻址 key，写 `/updates/latest.json`，更新 `site/release.js` 并部署 Pages
-- [ ] 本机打开公证 DMG：能启动、composer 在 WKWebView 下 `isSafariBrowser` 为 true
+- [x] 提交并 `git push fork master`（`c1ff6cd816`）
+- [x] `pnpm run release:desktop-mac` 公证 DMG（notary `f7a015ca-484e-4056-b4c5-49a6d7ffe99a` Accepted + staple）
+- [x] `stapler validate` + Gatekeeper `spctl`：`source=Notarized Developer ID`，版本 `0.1.12`
+- [x] GitHub Release [`dshd-v0.1.12`](https://github.com/Octo-o-o-o/deepseek-harness-desktop/releases/tag/dshd-v0.1.12) 附 DMG、SHA256、`.app.tar.gz` + `.sig`
+- [x] 上传 R2 `v0.1.12/c1ff6cd8/`，写 `/updates/latest.json`，更新 `site/release.js` 并部署 Pages
+- [x] 挂载公证 DMG：能验签、UA 字符串在打包二进制内。本机已有 `/Applications/dshd.app` 在跑，single-instance 无法再开第二份做 GUI 冒烟
+
+**产物**
+
+- DMG：`apps/desktop/dist/dshd-0.1.12-arm64.dmg`
+- SHA-256：`4baaf6c00463170ce14e6ede33b0d7b0467f1e0897176ffe67b38b76e430050f`
+- 下载：`https://dshd-dl.octoooo.com/v0.1.12/c1ff6cd8/dshd-0.1.12-arm64.dmg`
+- 更新：`https://dshd-dl.octoooo.com/updates/latest.json`（仅 `darwin-aarch64`）
+- 官网：`https://dshd.octoooo.com/`（`VERSION` `v0.1.12`）
 
 ---
 
@@ -81,3 +89,4 @@
 
 - 2026-08-17：看板落盘。D1–D4 已在同日完成。
 - 2026-08-17：S1–S5 落地。复审发现安装失败后 Restart 不可达、以及 client-ready 等待期间 swipe-back 窗口，均已修。`dsh-notary` keychain profile 仍能拉到 Accepted 历史。
+- 2026-08-17：`c1ff6cd816` 已推 fork；公证 DMG `dshd-0.1.12-arm64.dmg` SHA-256 `4baaf6c00463170ce14e6ede33b0d7b0467f1e0897176ffe67b38b76e430050f`；Release `dshd-v0.1.12`；R2 与 Pages 已更新。updater tar.gz 在 embed+重签之后重打并 minisign，不是 tauri bundle 当时那份。

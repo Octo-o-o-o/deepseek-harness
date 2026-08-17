@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 750" role="img" aria-label="DeepSeek Harness Desktop 窗口示意图(占位)">
+  <!-- 占位示意图:用户提供 desktop-preview.png 后,把 index.html 里 img 的 src 换成 /desktop-preview.png 即可。 -->
+  <rect width="1200" height="750" fill="#f0ede4"/>
+  <rect x="40" y="36" width="1120" height="678" rx="14" fill="#faf7ef" stroke="#cec6b7" stroke-width="2"/>
+  <!-- 窗口顶栏 -->
+  <rect x="40" y="36" width="1120" height="52" rx="14" fill="#fcfaf4" stroke="#cec6b7" stroke-width="2"/>
+  <rect x="40" y="70" width="1120" height="18" fill="#fcfaf4"/>
+  <circle cx="76" cy="62" r="7" fill="#cec6b7"/>
+  <circle cx="100" cy="62" r="7" fill="#cec6b7"/>
+  <circle cx="124" cy="62" r="7" fill="#a8641f"/>
+  <rect x="330" y="48" width="540" height="28" rx="8" fill="#f0ede4" stroke="#cec6b7"/>
+  <text x="600" y="67" font-family="ui-monospace, Menlo, monospace" font-size="15" fill="#706b61" text-anchor="middle">127.0.0.1:3080 — DeepSeek Harness Web UI</text>
+  <!-- 侧栏 -->
+  <rect x="40" y="88" width="230" height="626" fill="#f5f1e7" stroke="#cec6b7" stroke-width="2"/>
+  <rect x="72" y="130" width="150" height="16" rx="4" fill="#cec6b7"/>
+  <rect x="72" y="172" width="120" height="12" rx="4" fill="#ddd5c6"/>
+  <rect x="72" y="204" width="140" height="12" rx="4" fill="#ddd5c6"/>
+  <rect x="72" y="236" width="110" height="12" rx="4" fill="#ddd5c6"/>
+  <rect x="72" y="284" width="150" height="12" rx="4" fill="#ddd5c6"/>
+  <rect x="72" y="316" width="130" height="12" rx="4" fill="#ddd5c6"/>
+  <!-- 主区:对话示意 -->
+  <rect x="310" y="130" width="500" height="120" rx="10" fill="#fcfaf4" stroke="#cec6b7" stroke-width="2"/>
+  <rect x="334" y="154" width="300" height="14" rx="4" fill="#8b8578"/>
+  <rect x="334" y="184" width="420" height="12" rx="4" fill="#cec6b7"/>
+  <rect x="334" y="210" width="360" height="12" rx="4" fill="#cec6b7"/>
+  <rect x="560" y="286" width="520" height="150" rx="10" fill="#f5efe2" stroke="#a8641f" stroke-width="2"/>
+  <rect x="584" y="310" width="220" height="14" rx="4" fill="#a8641f"/>
+  <rect x="584" y="340" width="440" height="12" rx="4" fill="#c9bfae"/>
+  <rect x="584" y="366" width="400" height="12" rx="4" fill="#c9bfae"/>
+  <rect x="584" y="392" width="300" height="12" rx="4" fill="#c9bfae"/>
+  <!-- 插件行示意 -->
+  <rect x="310" y="470" width="770" height="90" rx="10" fill="#fcfaf4" stroke="#cec6b7" stroke-width="2"/>
+  <circle cx="356" cy="515" r="16" fill="#a8641f" opacity="0.18"/>
+  <rect x="392" y="500" width="200" height="14" rx="4" fill="#8b8578"/>
+  <rect x="392" y="524" width="340" height="10" rx="4" fill="#cec6b7"/>
+  <rect x="980" y="500" width="70" height="26" rx="8" fill="#a8641f" opacity="0.18"/>
+  <rect x="310" y="586" width="770" height="90" rx="10" fill="#fcfaf4" stroke="#cec6b7" stroke-width="2"/>
+  <circle cx="356" cy="631" r="16" fill="#41755a" opacity="0.2"/>
+  <rect x="392" y="616" width="240" height="14" rx="4" fill="#8b8578"/>
+  <rect x="392" y="640" width="320" height="10" rx="4" fill="#cec6b7"/>
+  <rect x="980" y="616" width="70" height="26" rx="8" fill="#41755a" opacity="0.2"/>
+</svg>

@@ -1,0 +1,12 @@
+# Cloudflare Pages 响应头规则。
+# release.js 是发布常量(下载地址与版本号),改了必须立刻对回访用户生效:
+# 站点默认给静态资源 max-age=14400,那会让换过的下载地址在浏览器里滞留最多 4 小时,
+# 期间老访客仍拿旧链接——上线前的占位期更会拿到 "#" 而使按钮失效。
+# 这里改为每次 revalidate(命中则 304,开销可忽略);其余资源沿用默认缓存。
+/release.js
+  Cache-Control: public, max-age=0, must-revalidate
+
+# 更新 manifest 必须立刻可见:发布与紧急撤回都靠它,任何缓存都会延长坏版本的暴露
+# 窗口。安装包本身走内容寻址的不可变 key,可以长缓存,故只对 manifest 降到 no-store。
+/updates/*
+  Cache-Control: no-store

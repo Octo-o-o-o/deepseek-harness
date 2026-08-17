@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DeepSeek Harness Desktop · 非官方 Unofficial — 双击即用的桌面应用</title>
+  <meta name="description" content="非官方社区项目 Unofficial community project:把 DeepSeek 官方开源的 agent harness(dsh)封装成双击即用的 macOS / Windows 桌面应用。免装 Node、不碰终端、托盘常驻,一切都在本地。The official DeepSeek Harness as a double-click desktop app." />
+  <meta name="robots" content="index,follow" />
+  <link rel="canonical" href="https://dshd.octoooo.com/" />
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="DeepSeek Harness Desktop" />
+  <meta property="og:title" content="DeepSeek Harness Desktop · 非官方 Unofficial — 双击即用的桌面应用" />
+  <meta property="og:description" content="非官方社区项目。官方 harness 内核原样保留,装进会自己管理本地服务的桌面壳。Unofficial desktop wrapper for the official DeepSeek Harness (dsh)." />
+  <meta property="og:url" content="https://dshd.octoooo.com/" />
+  <meta property="og:image" content="https://dshd.octoooo.com/desktop-preview.png" />
+  <meta property="og:locale" content="zh_CN" />
+  <meta property="og:locale:alternate" content="en_US" />
+
+  <meta name="theme-color" content="#f0ede4" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#12161f" media="(prefers-color-scheme: dark)" />
+
+  <link rel="icon" type="image/png" href="/app-icon.png" />
+  <link rel="apple-touch-icon" href="/app-icon.png" />
+
+  <!-- 防 FOUC:渲染前同步设 data-theme(空值跟随系统)与 data-lang(持久化,缺省按浏览器语言) -->
+  <script>
+    (function () {
+      var t = "";
+      try { t = localStorage.getItem("dshd.theme") || ""; } catch (e) {}
+      if (t === "dark") document.documentElement.setAttribute("data-theme", "dark");
+      else if (t === "light") document.documentElement.setAttribute("data-theme", "light");
+      var l = "";
+      try { l = localStorage.getItem("dshd.lang") || ""; } catch (e) {}
+      if (l !== "zh" && l !== "en") {
+        l = (navigator.language || "zh").toLowerCase().indexOf("zh") === 0 ? "zh" : "en";
+      }
+      document.documentElement.setAttribute("data-lang", l);
+      document.documentElement.setAttribute("lang", l === "zh" ? "zh-CN" : "en");
+    })();
+  </script>
+
+  <link rel="stylesheet" href="/tokens.css" />
+  <link rel="stylesheet" href="/site.css" />
+</head>
+<body>
+  <!-- ===================== 顶栏 ===================== -->
+  <header class="site-header">
+    <div class="container">
+      <a class="brand-lockup" href="/">
+        <img class="brand-mark" src="/app-icon.png" alt="DeepSeek Harness Desktop" />
+        <span>DeepSeek Harness Desktop</span>
+        <span class="badge-suffix">unofficial</span>
+      </a>
+      <nav class="nav" aria-label="主导航">
+        <a class="nav-link" href="#features"><span data-zh>特性</span><span data-en>Features</span></a>
+        <a class="nav-link" href="#relation"><span data-zh>与官方项目的关系</span><span data-en>Relation</span></a>
+        <a class="nav-link" href="#faq"><span data-zh>常见问题</span><span data-en>FAQ</span></a>
+      </nav>
+      <div class="header-actions">
+        <button class="icon-btn" data-lang-toggle type="button" aria-label="切换语言 / Switch language">EN</button>
+        <button class="icon-btn theme-toggle" data-theme-toggle type="button" aria-label="切换亮暗主题">
+          <svg class="icon-moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+          <svg class="icon-sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- ===================== 1. Hero ===================== -->
+    <section class="hero">
+      <div class="container">
+        <div class="hero-grid">
+          <div>
+            <span class="hero-badge" data-reveal>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+              <span data-zh>非官方 · 社区项目</span><span data-en>Unofficial · community project</span>
+            </span>
+            <h1 class="hero-title" data-reveal data-reveal-delay="1">DeepSeek Harness <span class="thin">Desktop</span></h1>
+            <p class="hero-sub" data-reveal data-reveal-delay="1">
+              <span data-zh>把 DeepSeek Harness 变成双击即用的桌面应用。</span>
+              <span data-en>The official DeepSeek Harness as a double-click desktop app.</span>
+            </p>
+            <p class="hero-desc" data-reveal data-reveal-delay="2">
+              <span data-zh>官方 harness 内核原样保留,装进一个会自己管理本地服务的桌面壳——免装 Node、不碰终端,打开就用。</span>
+              <span data-en>The official harness core, untouched, wrapped in a desktop shell that manages the local service for you — no Node.js, no terminal.</span>
+            </p>
+            <div class="hero-actions" data-reveal data-reveal-delay="2">
+              <a class="btn btn-primary btn-lg" data-dl-mac href="#">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20.94c1.5 0 2.75 1.06 4 1.06 3 0 6-8 6-12.22A4.91 4.91 0 0 0 17 5c-2.22 0-4 1.44-5 2-1-.56-2.78-2-5-2a4.9 4.9 0 0 0-5 4.78C2 14 5 22 8 22c1.25 0 2.5-1.06 4-1.06Z"/><path d="M10 2c1 .5 2 2 2 5"/></svg>
+                <span data-zh>下载 macOS 版</span><span data-en>Download for macOS</span>
+              </a>
+              <a class="btn btn-secondary btn-lg" data-dl-win href="#">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
+                <span data-zh>下载 Windows 版</span><span data-en>Download for Windows</span>
+              </a>
+            </div>
+            <p class="hero-aside mono" data-reveal data-reveal-delay="3"><span data-version>v0.1.0</span> · Apple Silicon / Windows x64</p>
+          </div>
+          <figure class="shot" style="margin:0" data-reveal data-reveal-delay="2">
+            <img src="/desktop-preview.png" alt="DeepSeek Harness Desktop window with the workspace list and composer" width="1600" height="1050" />
+            <figcaption>
+              <span data-zh>官方 Web UI 原样运行在桌面窗口里,左栏是本地工作区</span>
+              <span data-en>The official Web UI running inside the desktop window, with local workspaces in the sidebar</span>
+            </figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 2. 特性四卡 ===================== -->
+    <section class="section" id="features">
+      <div class="container">
+        <div class="section-head" data-reveal>
+          <span class="eyebrow"><span data-zh>特性</span><span data-en>FEATURES</span></span>
+          <h2 class="section-title"><span data-zh>还是那个 dsh,只是不用终端了</span><span data-en>Same dsh, minus the terminal</span></h2>
+          <p class="section-lead">
+            <span data-zh>桌面壳只做一件事:让官方 harness 在你电脑上安静地跑起来,并保持在那。</span>
+            <span data-en>The desktop shell does one thing: keeps the official harness running quietly on your machine.</span>
+          </p>
+        </div>
+        <div class="features">
+          <div class="card" data-reveal>
+            <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 9 5 12 1.8-5.2L21 14Z"/><path d="M7.2 2.2 8 5.1"/><path d="m5.1 8-2.9-.8"/><path d="M14 4.1 12 6"/><path d="m6 12-1.9 2"/></svg></div>
+            <h3 class="card-title"><span data-zh>双击即用</span><span data-en>Double-click ready</span></h3>
+            <p class="card-body"><span data-zh>免装 Node、不碰终端。下载、双击、开始用。</span><span data-en>No Node.js, no terminal. Download, double-click, done.</span></p>
+          </div>
+          <div class="card" data-reveal data-reveal-delay="1">
+            <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></svg></div>
+            <h3 class="card-title"><span data-zh>自动管理本地服务</span><span data-en>Local service, managed</span></h3>
+            <p class="card-body"><span data-zh>启动、停止、系统托盘常驻,生命周期都由应用照看。</span><span data-en>Start, stop, and stay in your system tray — the app looks after it.</span></p>
+          </div>
+          <div class="card" data-reveal data-reveal-delay="2">
+            <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="M12 22V12"/><path d="m3.3 7 8.7 5 8.7-5"/></svg></div>
+            <h3 class="card-title"><span data-zh>内核原样保留官方能力</span><span data-en>Official core, untouched</span></h3>
+            <p class="card-body"><span data-zh>官方 MIT 代码;插件体系与 Web UI 一概不动。</span><span data-en>Official MIT code; the plugin system and Web UI are left exactly as they are.</span></p>
+          </div>
+          <div class="card" data-reveal data-reveal-delay="3">
+            <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" x2="2" y1="12" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" x2="6.01" y1="16" y2="16"/><line x1="10" x2="10.01" y1="16" y2="16"/></svg></div>
+            <h3 class="card-title"><span data-zh>一切都在本地</span><span data-en>Everything stays local</span></h3>
+            <p class="card-body"><span data-zh>应用数据与服务都跑在用户自己的电脑上,不上传任何服务器。</span><span data-en>App data and services run on your own machine. Nothing is uploaded.</span></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 3. 怎么做出来的(彩蛋) ===================== -->
+    <section class="section section--tight section--alt">
+      <div class="container">
+        <div class="section-head" style="text-align:center;margin-inline:auto" data-reveal>
+          <span class="eyebrow"><span data-zh>怎么做出来的</span><span data-en>HOW THIS WAS BUILT</span></span>
+        </div>
+        <blockquote class="egg" data-reveal>
+          <span data-zh>这个 Desktop 是用 dsh 自己做的——DeepSeek V4 Pro 在 dsh 里做调度和 review,一共六个提问完成。</span>
+          <span data-en>This desktop app was built with dsh itself — DeepSeek V4 Pro handled scheduling and review inside dsh. Six prompts, done.</span>
+          <span class="who">— dogfooding<span data-zh>,六个提问</span><span data-en>, six prompts</span></span>
+        </blockquote>
+      </div>
+    </section>
+
+    <!-- ===================== 4. 与官方项目的关系 ===================== -->
+    <section class="section" id="relation">
+      <div class="container">
+        <div class="section-head" data-reveal>
+          <span class="eyebrow"><span data-zh>与官方项目的关系</span><span data-en>RELATION TO THE OFFICIAL PROJECT</span></span>
+          <h2 class="section-title"><span data-zh>站在官方仓库上</span><span data-en>Built on the official repo</span></h2>
+        </div>
+        <p class="rel-body" data-reveal>
+          <span data-zh>本桌面应用基于 <a href="https://github.com/deepseek-ai/deepseek-harness" target="_blank" rel="noopener">deepseek-ai/deepseek-harness</a> 构建:核心能力、插件系统和 Web UI 全部来自官方项目,一概不动。本项目只负责 Tauri 2 桌面封装、本地服务生命周期管理、托盘与窗口集成,以及安装包构建。<strong>想用命令行运行,或参与核心开发,请直接前往官方仓库。</strong></span>
+          <span data-en>This desktop app is built on <a href="https://github.com/deepseek-ai/deepseek-harness" target="_blank" rel="noopener">deepseek-ai/deepseek-harness</a>: the core capabilities, plugin system, and Web UI all come from the official project, untouched. This project only provides the Tauri 2 desktop wrapper, local service lifecycle management, tray and window integration, and installer builds. <strong>To run it from the command line or contribute to the core, please go to the official repository.</strong></span>
+        </p>
+        <div class="rel-links" data-reveal>
+          <a class="btn btn-secondary" href="https://github.com/deepseek-ai/deepseek-harness" target="_blank" rel="noopener">
+            <span data-zh>官方仓库(命令行 / 核心)</span><span data-en>Official repo (CLI / core)</span>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg>
+          </a>
+          <a class="btn btn-secondary" href="https://github.com/Octo-o-o-o/deepseek-harness" target="_blank" rel="noopener">
+            <span data-zh>本项目源码</span><span data-en>This project's source</span>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 5. FAQ ===================== -->
+    <section class="section section--alt" id="faq">
+      <div class="container">
+        <div class="section-head" style="text-align:center;margin-inline:auto" data-reveal>
+          <span class="eyebrow"><span data-zh>常见问题</span><span data-en>FAQ</span></span>
+          <h2 class="section-title"><span data-zh>先说清楚</span><span data-en>Straight answers</span></h2>
+        </div>
+        <div class="faq" data-reveal>
+          <details class="faq-item">
+            <summary>
+              <span data-zh>这是 DeepSeek 官方产品吗?</span><span data-en>Is this an official DeepSeek product?</span>
+              <span class="chev"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span>
+            </summary>
+            <div class="answer">
+              <span data-zh>不是。这是一个非官方社区项目,与 DeepSeek 无关联。官方的 DeepSeek Harness 是一个命令行 / Web 项目,请以官方仓库为准。</span>
+              <span data-en>No. This is an unofficial community project with no affiliation with DeepSeek. The official DeepSeek Harness is a CLI / web project — see the official repository.</span>
+            </div>
+          </details>
+          <details class="faq-item">
+            <summary>
+              <span data-zh>我的数据在哪?</span><span data-en>Where is my data?</span>
+              <span class="chev"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span>
+            </summary>
+            <div class="answer">
+              <span data-zh>全在本地。应用数据与本地服务都跑在你自己的电脑上,不上传任何服务器。</span>
+              <span data-en>Entirely local. App data and the local service run on your own computer; nothing is uploaded to any server.</span>
+            </div>
+          </details>
+          <details class="faq-item">
+            <summary>
+              <span data-zh>安全吗?</span><span data-en>Is it safe?</span>
+              <span class="chev"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span>
+            </summary>
+            <div class="answer">
+              <span data-zh>内核是官方开源代码(MIT),桌面壳同样开源、可以自行审计:<a href="https://github.com/Octo-o-o-o/deepseek-harness" target="_blank" rel="noopener">github.com/Octo-o-o-o/deepseek-harness</a>。</span>
+              <span data-en>The core is official open-source code (MIT), and the desktop shell is open source too — audit it yourself: <a href="https://github.com/Octo-o-o-o/deepseek-harness" target="_blank" rel="noopener">github.com/Octo-o-o-o/deepseek-harness</a>.</span>
+            </div>
+          </details>
+          <details class="faq-item">
+            <summary>
+              <span data-zh>什么成熟度?能拿来干正经活吗?</span><span data-en>How mature is it?</span>
+              <span class="chev"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span>
+            </summary>
+            <div class="answer">
+              <span data-zh>内核处于官方 developer preview(rc)阶段,官方明确声明会有破坏兼容性的变更。尝鲜很好,<strong>请勿存放重要数据</strong>。</span>
+              <span data-en>The core is at the official developer-preview (rc) stage, and the official README states there will be compatibility-breaking changes. Great for trying out — <strong>do not keep important data in it</strong>.</span>
+            </div>
+          </details>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===================== 6. Footer ===================== -->
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <span class="mono" style="color:var(--text-secondary)">DeepSeek Harness Desktop</span>
+        <nav class="footer-links" aria-label="页脚导航">
+          <a href="https://github.com/Octo-o-o-o/deepseek-harness" target="_blank" rel="noopener"><span data-zh>源码 GitHub</span><span data-en>Source on GitHub</span></a>
+          <a href="https://github.com/deepseek-ai/deepseek-harness" target="_blank" rel="noopener"><span data-zh>官方仓库</span><span data-en>Official repository</span></a>
+          <a href="https://octoooo.com" target="_blank" rel="noopener"><span data-zh>出品:千手实验室</span><span data-en>By Qianshou Lab</span></a>
+        </nav>
+        <p class="footer-note">
+          <span data-zh>本项目为非官方社区项目,与 DeepSeek 无关联;DeepSeek Harness 原仓库代码与文档版权归 DeepSeek AI(MIT)。</span>
+          <span data-en>This is an unofficial community project and is not affiliated with DeepSeek. The original DeepSeek Harness repository code and documentation are copyright DeepSeek AI (MIT).</span>
+        </p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="/release.js"></script>
+  <script src="/app.js" defer></script>
+</body>
+</html>
