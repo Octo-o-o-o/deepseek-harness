@@ -23,7 +23,7 @@ PATH=/usr/bin:/bin:/usr/sbin:/sbin
 export PATH DSH_HOME="$home" HOME="$home"
 out="$home/out.log"
 : >"$out"
-"$node" "$bin" web --port 0 --host 127.0.0.1 >"$out" 2>&1 &
+"$node" "$bin" web --port 0 --host 127.0.0.1 --no-open >"$out" 2>&1 &
 pid=$!
 port=""
 i=0

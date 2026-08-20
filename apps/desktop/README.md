@@ -17,7 +17,7 @@ On macOS the main WebView presents Safari.app's `Version/… Safari/…` user-ag
                    ▼
 ┌─────────────────────────────────────────────┐
 │  Node sidecar (bundled runtime + deploy)    │
-│    dsh web --port 0 --host 127.0.0.1        │
+│    dsh web --port 0 --host 127.0.0.1 --no-open │
 │    env DSH_DESKTOP_TOKEN + BOOTSTRAP_NONCE  │
 └─────────────────────────────────────────────┘
 ```

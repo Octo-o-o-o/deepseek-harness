@@ -21,6 +21,12 @@
       "path": "../runtime"
     },
     {
+      "path": "../ui-conversation"
+    },
+    {
+      "path": "../ui-primitives"
+    },
+    {
       "path": "../ui-sidebar"
     },
     {

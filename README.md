@@ -79,7 +79,7 @@
 npx @deepseek-ai/dsh web
 ```
 
-默认在 `http://127.0.0.1:3080` 启动 Web UI，见 [Web UI 指南](docs/user/guide/index.md)。
+默认在 `http://127.0.0.1:3080` 启动 Web UI，本机启动还会打开默认浏览器；SSH 下只打印 URL。传 `--no-open` 可关掉自动打开。见 [Web UI 指南](docs/user/guide/index.md)。
 
 ### 从源码运行
 

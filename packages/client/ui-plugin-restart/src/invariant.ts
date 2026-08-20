@@ -16,7 +16,7 @@ export const inject = ['invariants']
 
 /**
  * No runtime invariant: the node half has no behavior, and the browser half
- * owns one slot registration plus one dictionary, both released by the same
+ * owns slot registrations plus one dictionary, all released by the same
  * effect disposer. The pending-restart state lives in the desktop shell, not
  * in this process, so there is no second authority here to compare against.
  */

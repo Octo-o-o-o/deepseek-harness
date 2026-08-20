@@ -79,7 +79,7 @@ This is a complete harness checkout, so the usual entry points work too.
 npx @deepseek-ai/dsh web
 ```
 
-Starts the Web UI at `http://127.0.0.1:3080` by default. See the [Web UI guide](docs/user/guide/index.md).
+Starts the Web UI at `http://127.0.0.1:3080` by default, and a local launch also opens the default browser. An SSH launch only prints the URL. Pass `--no-open` to skip opening a browser. See the [Web UI guide](docs/user/guide/index.md).
 
 ### Run from source
 

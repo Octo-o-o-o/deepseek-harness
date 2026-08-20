@@ -552,7 +552,7 @@ async function selfCheck() {
   const home = join(tmpdir(), `dsh-pack-check-${String(process.pid)}`)
   await rm(home, { recursive: true, force: true })
   await mkdir(home, { recursive: true })
-  const child = spawn(node, [binJs, 'web', '--port', '0', '--host', '127.0.0.1'], {
+  const child = spawn(node, [binJs, 'web', '--port', '0', '--host', '127.0.0.1', '--no-open'], {
     cwd: home,
     env: {
       PATH: '/usr/bin:/bin:/usr/sbin:/sbin',

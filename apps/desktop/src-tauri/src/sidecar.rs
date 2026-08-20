@@ -21,7 +21,7 @@ use crate::ready::{wait_for_ready_line, ReadyError};
 pub struct SidecarSpec {
     /// Node (or test double) executable.
     pub program: PathBuf,
-    /// Arguments after the program (script + `web --port 0 --host 127.0.0.1` + extras).
+    /// Arguments after the program (script + `web --port 0 --host 127.0.0.1 --no-open` + extras).
     pub args: Vec<String>,
     /// Child working directory (workspace cwd contract).
     pub cwd: PathBuf,
@@ -70,7 +70,7 @@ pub enum SidecarError {
     Log(std::io::Error),
 }
 
-/// Build the production `dsh web --port 0 --host 127.0.0.1` argument list.
+/// Build the production `dsh web --port 0 --host 127.0.0.1 --no-open` argument list.
 ///
 /// Launcher flags must precede the pinned ones: `dsh` treats everything from
 /// the first app flag onward as the app's own argv, so a `--patch` placed
@@ -90,6 +90,7 @@ pub fn desktop_web_args(bin_js: &Path, launcher: &[String]) -> Vec<String> {
         "0".into(),
         "--host".into(),
         "127.0.0.1".into(),
+        "--no-open".into(),
     ]);
     args
 }
@@ -505,6 +506,7 @@ mod tests {
                 "0".into(),
                 "--host".into(),
                 "127.0.0.1".into(),
+                "--no-open".into(),
             ]
         );
         // Launcher flags sit between the subcommand and the pinned bind flags:
@@ -524,6 +526,7 @@ mod tests {
                 "0".into(),
                 "--host".into(),
                 "127.0.0.1".into(),
+                "--no-open".into(),
             ]
         );
         assert!(assert_safe_sidecar_args(&args).is_ok());

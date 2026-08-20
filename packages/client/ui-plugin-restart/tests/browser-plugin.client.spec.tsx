@@ -14,6 +14,7 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply, inject } from '../src/client/index.ts'
 import { apply as nodeApply } from '../src/index.ts'
+import { DesktopBrandMark, DesktopBrandName } from '../src/client/Brand.tsx'
 import { PluginRestartAction } from '../src/client/PluginRestartAction.tsx'
 import { zh } from '../src/client/locales.ts'
 
@@ -186,5 +187,44 @@ describe('plugin-restart browser half', () => {
     view.unmount()
     const before = vi.getTimerCount()
     expect(before).toBe(0)
+  })
+})
+
+const BRAND_HOLES = [
+  'sidebar.brand.mark',
+  'sidebar.brand.name',
+  'conversation.hero.brand.mark',
+] as const
+
+describe('desktop brand occupants', () => {
+  it('fills the generic brand holes and withdraws them with the fiber', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SlotRegistry).await()
+    ctx.slots.register({
+      name: 'root',
+      children: Object.fromEntries([
+        ['sidebar.footer.action', { kind: 'list', scope: 'root' }],
+        ...BRAND_HOLES.map(name => [name, { kind: 'single', scope: 'root' }]),
+      ]),
+    } as never, (() => null) as never)
+    ctx.provide('locale', new LocaleRuntime(ctx))
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    for (const hole of BRAND_HOLES) expect(ctx.slots.entries(hole)).toHaveLength(1)
+    await fiber.dispose()
+    for (const hole of BRAND_HOLES) expect(ctx.slots.entries(hole)).toHaveLength(0)
+  })
+
+  it('renders the packaged mark at the requested size and the two-line name', () => {
+    const name = render(<DesktopBrandName />)
+    expect(name.getByText('DeepSeek Harness')).toBeTruthy()
+    expect(name.getByText('Desktop')).toBeTruthy()
+    name.unmount()
+
+    const mark = render(<DesktopBrandMark size={34} className="hero-mark" />)
+    expect(mark.container.querySelector('svg')?.getAttribute('width')).toBe('34')
+    expect(mark.container.querySelector('svg')?.getAttribute('class')).toBe('hero-mark')
+    mark.rerender(<DesktopBrandMark size={24} />)
+    expect(mark.container.querySelector('svg')?.getAttribute('width')).toBe('24')
   })
 })

@@ -65,7 +65,7 @@ export interface ConnectionHandle {
   readonly isLoopback: boolean
   /** Whether the desktop shell served this page (its packaged sidecar, not a browser tab). */
   readonly isDesktopShell: boolean
-  /** Generation-scoped Host facts, including native path-open capability. */
+  /** Generation-scoped Host facts, including the account home and native path-open capability. */
   readonly hostDescription: HostDescriptionSource
   /** Generic logical RPC channels over the same Connection transport. */
   readonly rpc: ClientConnectionRpc

@@ -17,7 +17,7 @@ Tauri 2 壳：在 `127.0.0.1` 上启动本地 `dsh web` sidecar，等待就绪�
                    ▼
 ┌─────────────────────────────────────────────┐
 │  Node sidecar (bundled runtime + deploy)    │
-│    dsh web --port 0 --host 127.0.0.1        │
+│    dsh web --port 0 --host 127.0.0.1 --no-open │
 │    env DSH_DESKTOP_TOKEN + BOOTSTRAP_NONCE  │
 └─────────────────────────────────────────────┘
 ```
