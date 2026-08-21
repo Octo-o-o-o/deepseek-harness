@@ -114,6 +114,7 @@ function fakeHttpServer(
       }
     },
     applyIndexTaps: (html: string) => taps.reduce((acc, tap) => tap(acc), html),
+    renderIndex: (html: string) => taps.reduce((acc, tap) => tap(acc), html),
   } as unknown as WebServer
   return {
     server,
