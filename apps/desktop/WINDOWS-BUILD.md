@@ -49,10 +49,10 @@ Done when the install exits 0.
 ### 3. Build the workspace
 
 ```powershell
-pnpm run build
+pnpm run build:official
 ```
 
-This emits types with `tsc`, bundles runtime with `tsdown`, then builds the Web frontend with Vite. It contains no platform-specific code and passes on both hosts.
+This emits types with `tsc`, bundles runtime with `tsdown`, then builds the Web frontend with the official client profile. Sidecar pack refuses any other client artifact profile. It contains no platform-specific code and passes on both hosts.
 
 Done when both `apps/cli/lib/bin.js` and `apps/web/dist/index.html` exist.
 

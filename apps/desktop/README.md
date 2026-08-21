@@ -32,7 +32,7 @@ cargo test
 cargo run
 ```
 
-`cargo run` uses `node` on PATH and `apps/cli/lib/bin.js` from the checkout. Override with `DSH_NODE_PATH` / `DSH_WEB_BIN`. `DSH_HOME` and `DSH_WORKSPACE` override the data directory and sidecar cwd.
+`cargo run` uses `node` on PATH and `apps/cli/lib/bin.js` from the checkout. Override with `DSH_NODE_PATH` / `DSH_WEB_BIN`. `DSH_HOME` and `DSH_WORKSPACE` override the data directory and sidecar cwd. The sidecar `--patch` layer disables `ui-brand-official` so official-profile client artifacts cannot occupy the packaged application's `single` brand slots.
 
 Gates (cwd = `src-tauri`):
 
@@ -44,8 +44,11 @@ cargo test
 
 ## Packaging
 
+Sidecar pack runs `scripts/release/pack.ts`, which requires current official-profile client artifacts:
+
 ```sh
-# repo root: production deploy + pinned Node v24.19.0 + PATH-stripped boot
+# repo root: official client artifacts, then production deploy + pinned Node v24.19.0
+pnpm run build:official
 pnpm --filter @deepseek-ai/dshd run pack
 
 # this package: unsigned .app, then re-copy the sidecar (Tauri drops symlinks)
@@ -85,7 +88,7 @@ The preflight runs before the build, so a credential problem costs seconds rathe
 Verify a finished DMG. The notarization ticket is stapled to the DMG, so `stapler validate` takes the disk image; the mounted application is checked by Gatekeeper, whose `source=Notarized Developer ID` is what a double-click resolves:
 
 ```sh
-xcrun stapler validate apps/desktop/dist/dshd-0.1.12-arm64.dmg
+xcrun stapler validate apps/desktop/dist/dshd-0.1.13-arm64.dmg
 codesign --verify --deep --strict --verbose=2 "/Volumes/dshd/dshd.app"
 spctl --assess --type execute --verbose=4 "/Volumes/dshd/dshd.app"
 ```
@@ -134,7 +137,7 @@ The sidecar stays on `127.0.0.1`. A Desktop-only share gateway in the same proce
 
 Nearby is off by default. Turning it on binds the chosen LAN IPv4 (not `0.0.0.0`); the QR is a `/p/<ticket>` interstitial that a same-origin POST consumes (`Origin: null` from a no-referrer form counts as missing Origin). LAN is plaintext HTTP. **Anywhere** runs a foreground `tailscale serve` at the gateway loopback port on an HTTPS port this feature owns, and never `off`s an existing 443 Serve. Quit stops that child. Remote browsers cannot pick folders, change settings, or change credentials: those methods stay 403 because the gateway rewrites their Host to `dshd.share.internal`. Switches persist in `desktop-state.json` as `{ nearby, tailscale }` after the listen or Serve actually reaches that state; a corrupt file is left untouched.
 
-`overlay.rs` still refuses `--host 0.0.0.0` and `--trusted-host` on the sidecar argv.
+`overlay.rs` still refuses `--host 0.0.0.0` and `--trusted-host` on the sidecar argv, and requires `--no-open`.
 
 ## Known limits
 
@@ -144,4 +147,5 @@ Nearby is off by default. Turning it on binds the chosen LAN IPv4 (not `0.0.0.0`
 - A plugin's exact `/api` route wins over the connection prefix, so one named after an RPC method (`/api/session.create`) replaces that method for the whole launch. Authentication is unaffected — the admission guard covers every `/api` path — and the composition is reported on stderr at startup, but nothing prevents the collision.
 - WebView2 presence detection / installer prompt is not wired.
 - Only macOS has a signed release path. The `build` script and both CI platform artifacts stay unsigned, and Windows and Linux installer formats and their signing remain release work.
+- Default session persistence is JSONL. An rc.7 SQLite session file is schema 15; rc.8 refuses it at schema 17 with no migration.
 - `open` of the `.app` from a sandbox may fail (`LSOpen` -54); launching `Contents/MacOS/dshd` still starts the sidecar.

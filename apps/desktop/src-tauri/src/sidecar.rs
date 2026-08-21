@@ -551,6 +551,7 @@ mod tests {
                 script.to_string_lossy().into_owned(),
                 "--host".into(),
                 "127.0.0.1".into(),
+                "--no-open".into(),
             ],
             cwd: dir,
             env: vec![],

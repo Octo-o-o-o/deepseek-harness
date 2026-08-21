@@ -287,10 +287,10 @@ const CREDENTIAL_PATTERN = /KEY|SECRET|TOKEN|PASSWORD/i
 /**
  * The environment for build and pack subprocesses.
  *
- * The release runs `pnpm build` and a sidecar pack whose `npm install` executes
- * dependency lifecycle scripts. Those steps need no credential of any kind, so
- * they receive none: every credential-shaped name is dropped, not just the
- * Apple ones this file names ([defensive patterns](../../docs/defensive-patterns.md)).
+ * The release runs `pnpm build:official` and a sidecar pack whose `npm install`
+ * executes dependency lifecycle scripts. Those steps need no credential of any
+ * kind, so they receive none: every credential-shaped name is dropped, not just
+ * the Apple ones this file names ([defensive patterns](../../docs/defensive-patterns.md)).
  * `codesign` and `notarytool` are the only steps that see the real environment.
  * @param env - environment the release runs under.
  * @returns a copy without credential-shaped or release-steering variables.
@@ -311,9 +311,10 @@ const UPDATER_SIGNING_VARIABLES = ['TAURI_SIGNING_PRIVATE_KEY', 'TAURI_SIGNING_P
  *
  * `tauri build` signs the updater artifact as it produces it, so this one step
  * cannot run under the scrubbed environment the other steps use. Widening
- * {@link buildEnvironment} instead would hand the key to `pnpm build` and to
- * the sidecar pack, whose `npm install` reaches dependency code; `bundleApp`
- * runs only `tauri build` and installs nothing, so the exposure stops here.
+ * {@link buildEnvironment} instead would hand the key to `pnpm build:official`
+ * and to the sidecar pack, whose `npm install` reaches dependency code;
+ * `bundleApp` runs only `tauri build` and installs nothing, so the exposure
+ * stops here.
  *
  * @param env - environment the release runs under.
  * @returns the build environment with the signing variables restored.
@@ -344,7 +345,7 @@ export function releaseDesktopMac(): void {
   if (version === undefined) throw new Error('apps/desktop/package.json must declare a version')
 
   const buildEnv = buildEnvironment(process.env)
-  run('pnpm', ['--workspace-root', 'run', 'build'], buildEnv, repoRoot)
+  run('pnpm', ['--workspace-root', 'run', 'build:official'], buildEnv, repoRoot)
   run('node', ['scripts/pack-sidecar.mjs'], buildEnv, desktopRoot)
   // The bundle step owns the source-path remap every build path needs; see
   // `bundleApp` in pack-sidecar.mjs.

@@ -22,7 +22,7 @@ composer 把光标与选区留在透明的原生 textarea 中，由 backdrop 绘
 
 ## 验证
 
-组件测试会合成 Safari 的陈旧度量，断言先 textarea 后滚动容器的失效顺序，保留选区，并证明原生草稿增长不会读取几何。浏览器 identity 测试覆盖桌面与移动 Safari、桌面 Chromium、iOS Chrome／Edge／Opera、Apple web view、未加修饰的 macOS WKWebView，以及呈现 Safari.app token 的 WKWebView。macOS 上的 dshd 在 WebView User-Agent 中提供这些 token（[桌面 identity](2026-08-17-desktop-wkwebview-safari-identity.md)）；检测函数本身不变。
+组件测试会合成 Safari 的陈旧度量，断言先 textarea 后滚动容器的失效顺序，保留选区，并证明原生草稿增长不会读取几何。浏览器 identity 测试覆盖桌面与移动 Safari、桌面 Chromium、iOS Chrome／Edge／Opera、Apple web view、未加修饰的 macOS WKWebView，以及呈现 Safari.app token 的 WKWebView。macOS 上的 dshd 在 WebView User-Agent 中提供这些 token（[桌面 identity](2026-08-17-desktop-wkwebview-safari-identity.zh.md)）；检测函数本身不变。
 
 组装后的包还会在 Safari 26.5.2 中通过原生的 51 字符到 50 字符 Backspace 路径验证。Playwright WebKit 26.5 在组装应用与最小化页面中都无需本绕法即可正确稳定，因此仓库的 Chromium 浏览器泳道无法复现这个 Safari 应用缺陷；在可自动化的 Safari 泳道出现之前，由聚焦组件测试固定该引擎状态。
 

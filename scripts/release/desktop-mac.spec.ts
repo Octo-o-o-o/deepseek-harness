@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -229,5 +229,12 @@ describe('machOFiles', () => {
     const real = write('Contents/MacOS/dshd', machO(0xfeedfacf))
     symlinkSync(real, join(root, 'Contents/MacOS/dshd-alias'))
     expect(machOFiles(root)).toEqual([real])
+  })
+})
+
+describe('releaseDesktopMac build profile', () => {
+  it('runs build:official so pack.ts can verify client artifacts', () => {
+    const source = readFileSync(new URL('./desktop-mac.ts', import.meta.url), 'utf8')
+    expect(source).toContain("run('pnpm', ['--workspace-root', 'run', 'build:official']")
   })
 })

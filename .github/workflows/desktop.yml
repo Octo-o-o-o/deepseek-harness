@@ -106,7 +106,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build workspace packages
-        run: pnpm run build
+        run: pnpm run build:official
 
       - name: Pack sidecar
         run: node apps/desktop/scripts/pack-sidecar.mjs

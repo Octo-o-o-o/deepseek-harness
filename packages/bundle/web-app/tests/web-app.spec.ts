@@ -338,7 +338,7 @@ describe('web-app runtime glue', () => {
     const ctx = new Context()
     const { server, applyTaps, guard } = fakeHttpServer()
     ctx.provide('webServer', server)
-    apply(ctx, new Config({ printUrl: false, surfaceContext: false, trustedHosts: [] }))
+    apply(ctx, new Config({ openBrowser: false, printUrl: false, surfaceContext: false, trustedHosts: [] }))
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(applyTaps('<head></head>')).toBe('<head></head>')
     // `dsh web` from a terminal must reach its routes unauthenticated.
@@ -356,7 +356,7 @@ describe('web-app runtime glue', () => {
       desktopToken: 'tok',
       desktopBootstrapNonce: 'nonce',
     })
-    apply(ctx, new Config({ printUrl: false, surfaceContext: false, trustedHosts: [] }))
+    apply(ctx, new Config({ openBrowser: false, printUrl: false, surfaceContext: false, trustedHosts: [] }))
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(ctx.get('webRuntime')).toEqual({
       lanAddresses: [],
@@ -386,7 +386,7 @@ describe('web-app runtime glue', () => {
     })
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     provideLoader(ctx)
-    apply(ctx, new Config({ printUrl: false, surfaceContext: false, trustedHosts: [] }))
+    apply(ctx, new Config({ openBrowser: false, printUrl: false, surfaceContext: false, trustedHosts: [] }))
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('exact /api/usage-stats/balance owner=unknown'))
     await ctx.fiber.dispose()
@@ -402,7 +402,7 @@ describe('web-app runtime glue', () => {
       desktopToken: "ab<'>secret",
       desktopBootstrapNonce: "ab<'>",
     })
-    apply(ctx, new Config({ printUrl: false, surfaceContext: false, trustedHosts: [] }))
+    apply(ctx, new Config({ openBrowser: false, printUrl: false, surfaceContext: false, trustedHosts: [] }))
     await new Promise(resolve => setTimeout(resolve, 0))
     const injected = applyTaps('<head></head><body>shell</body>')
     expect(injected).toContain('window.__DSH_DESKTOP_BOOTSTRAP__')
@@ -438,7 +438,7 @@ describe('web-app runtime glue', () => {
       desktopToken: 'tok',
       desktopBootstrapNonce: '',
     })
-    expect(() => apply(ctx, new Config({ printUrl: false, surfaceContext: false, trustedHosts: [] })))
+    expect(() => apply(ctx, new Config({ openBrowser: false, printUrl: false, surfaceContext: false, trustedHosts: [] })))
       .toThrow('must both be set')
   })
 
@@ -452,7 +452,7 @@ describe('web-app runtime glue', () => {
       desktopToken: 'tok',
       desktopBootstrapNonce: 'nonce',
     })
-    apply(ctx, new Config({ printUrl: false, surfaceContext: false, trustedHosts: [] }))
+    apply(ctx, new Config({ openBrowser: false, printUrl: false, surfaceContext: false, trustedHosts: [] }))
     await new Promise(resolve => setTimeout(resolve, 0))
     const dispatch = createServer((req, res) => {
       const path = new URL(req.url ?? '/', 'http://x').pathname

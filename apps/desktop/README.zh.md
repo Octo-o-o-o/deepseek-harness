@@ -32,7 +32,7 @@ cargo test
 cargo run
 ```
 
-`cargo run` 使用 PATH 上的 `node` 与检出中的 `apps/cli/lib/bin.js`。可用 `DSH_NODE_PATH` / `DSH_WEB_BIN` 覆盖。`DSH_HOME` 与 `DSH_WORKSPACE` 覆盖数据目录与 sidecar 的 cwd。
+`cargo run` 使用 PATH 上的 `node` 与检出中的 `apps/cli/lib/bin.js`。可用 `DSH_NODE_PATH` / `DSH_WEB_BIN` 覆盖。`DSH_HOME` 与 `DSH_WORKSPACE` 覆盖数据目录与 sidecar 的 cwd。sidecar 的 `--patch` 层会关掉 `ui-brand-official`，因此即便客户端产物按 official profile 构建，也不会占据打包应用自己的 `single` 品牌 slot。
 
 门禁（cwd = `src-tauri`）：
 
@@ -44,8 +44,11 @@ cargo test
 
 ## 打包
 
+Sidecar pack 会跑 `scripts/release/pack.ts`，要求当前客户端产物是 official profile：
+
 ```sh
-# repo root: production deploy + pinned Node v24.19.0 + PATH-stripped boot
+# repo root: official client artifacts, then production deploy + pinned Node v24.19.0
+pnpm run build:official
 pnpm --filter @deepseek-ai/dshd run pack
 
 # this package: unsigned .app, then re-copy the sidecar (Tauri drops symlinks)
@@ -69,7 +72,7 @@ APPLE_APP_SPECIFIC_PASSWORD="$(security find-generic-password -a "$USER" -s dshd
 pnpm run release:desktop-mac
 ```
 
-updater 密钥要传**内容**,而不是 `TAURI_SIGNING_PRIVATE_KEY_PATH`:否则构建会报 `A public key has been found, but no private key`。签名变量经 `bundleEnvironment` 只到达 bundle 步骤——`buildEnvironment` 会剥离一切凭据形态的名字,因为 `pnpm build` 与 sidecar pack 的 `npm install` 会触及依赖代码（[updater note](../../.agents/notes/implemented/feature/2026-08-15-desktop-in-app-updater.md)）。
+updater 密钥要传**内容**,而不是 `TAURI_SIGNING_PRIVATE_KEY_PATH`:否则构建会报 `A public key has been found, but no private key`。签名变量经 `bundleEnvironment` 只到达 bundle 步骤——`buildEnvironment` 会剥离一切凭据形态的名字,因为 `pnpm build` 与 sidecar pack 的 `npm install` 会触及依赖代码（[updater note](../../.agents/notes/implemented/feature/2026-08-15-desktop-in-app-updater.zh.md)）。
 
 开始之前先验证公证凭据,因为公证是最后一步、也是重做代价最高的一步:
 
@@ -85,7 +88,7 @@ xcrun notarytool history --apple-id "<Apple ID>" --team-id "<Team ID>" \
 复验成品 DMG。公证票据 staple 在 DMG 上，因此 `stapler validate` 取的是磁盘映像；挂载后的应用由 Gatekeeper 检查，其 `source=Notarized Developer ID` 才是双击时真正解析到的结果：
 
 ```sh
-xcrun stapler validate apps/desktop/dist/dshd-0.1.12-arm64.dmg
+xcrun stapler validate apps/desktop/dist/dshd-0.1.13-arm64.dmg
 codesign --verify --deep --strict --verbose=2 "/Volumes/dshd/dshd.app"
 spctl --assess --type execute --verbose=4 "/Volumes/dshd/dshd.app"
 ```
@@ -134,7 +137,7 @@ sidecar 仍然只听 `127.0.0.1`。同一进程里仅 Desktop 安装的分享网
 
 附近默认关闭。打开后绑在所选 LAN IPv4 上（不是 `0.0.0.0`）；二维码是 `/p/<ticket>` 中间页，同源 POST 才消费（no-referrer form 带来的 `Origin: null` 按缺 Origin 处理）。LAN 是明文 HTTP。**任何网络** 对网关回环端口跑前台 `tailscale serve`，HTTPS 端口由本功能独占，绝不 `off` 用户已有的 443 Serve。退出会停掉这个子进程。远程浏览器不能选文件夹、改设置或改密钥：这些方法继续 403，因为网关把它们的 Host 改写成 `dshd.share.internal`。开关在监听或 Serve 真正进入目标状态后写入 `desktop-state.json` 的 `{ nearby, tailscale }`；损坏的文件原样留下。
 
-`overlay.rs` 仍然拒绝 sidecar argv 上的 `--host 0.0.0.0` 与 `--trusted-host`。
+`overlay.rs` 仍然拒绝 sidecar argv 上的 `--host 0.0.0.0` 与 `--trusted-host`，并要求 `--no-open`。
 
 ## 已知限制
 
@@ -144,4 +147,5 @@ sidecar 仍然只听 `127.0.0.1`。同一进程里仅 Desktop 安装的分享网
 - 插件的 exact `/api` 路由优先于 connection 的 prefix，因此与某个 RPC 方法同名的路由（`/api/session.create`）会在整次启动期间顶替该方法。鉴权不受影响——准入 guard 覆盖每条 `/api` 路径——启动时也会把这种组合报到 stderr，但没有任何东西阻止这种冲突。
 - 未接入 WebView2 存在性检测 / 安装器提示。
 - 只有 macOS 有签名发布路径。`build` 脚本与 CI 两个平台的产物仍未签名，Windows 与 Linux 的安装包格式及其签名仍属待办发布工作。
+- 默认会话持久化仍是 JSONL。rc.7 的 SQLite 会话文件是 schema 15；rc.8 在 schema 17 下直接拒绝且无迁移。
 - 从沙箱内 `open` 该 `.app` 可能失败（`LSOpen` -54）；直接启动 `Contents/MacOS/dshd` 仍能拉起 sidecar。

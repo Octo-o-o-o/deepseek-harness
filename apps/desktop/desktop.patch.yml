@@ -6,6 +6,14 @@
 # in the bundle's cordis.patch.yml also keeps this fork's diff against upstream
 # confined to files upstream does not have.
 
+# The shared web bundle always inserts ui-brand-official. That plugin fills the
+# generic brand slots when the client artifacts were built with
+# DSH_CLIENT_BUILD_PROFILE=official. Those slots are `single`: a second occupant
+# throws. The packaged application owns the same holes via ui-plugin-restart, so
+# the official row stays off in this composition regardless of build profile.
+- id: ui-brand-official
+  disabled: true
+
 - insert:
     # Offers a restart once the profile's plugin list has moved away from what
     # this composition read at boot. Only the shell can detect that (it stamped

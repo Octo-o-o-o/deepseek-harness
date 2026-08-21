@@ -355,7 +355,9 @@ function needsShell(command) {
 
 /**
  * Assemble the payload from the repository's official release tarballs plus
- * an offline npm install. pnpm deploy keeps vendor packages as workspace
+ * an offline npm install. The dsh family pack refuses a tree whose client
+ * artifacts are not the current official profile (`pnpm run build:official`).
+ * pnpm deploy keeps vendor packages as workspace
  * symlinks and an absolute-link .pnpm zoo, both of which break inside an app
  * bundle; npm's flat install carries every package as real directories.
  */

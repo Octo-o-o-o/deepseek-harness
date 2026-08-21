@@ -49,10 +49,10 @@ pnpm 版本由仓库的 `packageManager` 字段钉死，`corepack` 会取对应�
 ### 3. 构建 workspace
 
 ```powershell
-pnpm run build
+pnpm run build:official
 ```
 
-先用 `tsc` 出类型，再用 `tsdown` 打运行时，最后用 Vite 构建 Web 前端。这一步不含平台相关代码，两个平台都通过。
+先用 `tsc` 出类型，再用 `tsdown` 打运行时，最后按 official 客户端 profile 构建 Web 前端。Sidecar pack 拒绝其它客户端产物 profile。这一步不含平台相关代码，两个平台都通过。
 
 `apps/cli/lib/bin.js` 与 `apps/web/dist/index.html` 都存在即为完成。
 

@@ -1,4 +1,5 @@
-//! Desktop security overlay: fail-closed on non-loopback bind and trust expansion.
+//! Desktop security overlay: fail-closed on non-loopback bind, trust expansion,
+//! and default-browser handoff.
 
 /// Overlay rejection.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -12,6 +13,10 @@ pub enum OverlayError {
     /// Sidecar args omitted the required loopback host flag.
     #[error("desktop overlay requires --host 127.0.0.1")]
     MissingLoopbackHost,
+    /// Sidecar args omitted `--no-open`, so `dsh web` would hand the nonce-gated
+    /// loopback URL to the operating system's default browser.
+    #[error("desktop overlay requires --no-open")]
+    MissingNoOpen,
 }
 
 /// Whether `host` is the loopback literal the desktop composition allows.
@@ -31,14 +36,19 @@ pub fn is_allowed_bind_host(host: &str) -> bool {
 /// - `args`: full sidecar argument list after the node program (script + flags).
 ///
 /// # Returns
-/// `Ok(())` when the argv is the desktop-safe `dsh web --port 0 --host 127.0.0.1` family.
+/// `Ok(())` when the argv is the desktop-safe
+/// `dsh web --port 0 --host 127.0.0.1 --no-open` family.
 pub fn assert_safe_sidecar_args(args: &[String]) -> Result<(), OverlayError> {
     let mut saw_loopback_host = false;
+    let mut saw_no_open = false;
     let mut index = 0;
     while index < args.len() {
         let current = args[index].as_str();
         if current == "--trusted-host" || current.starts_with("--trusted-host=") {
             return Err(OverlayError::TrustedHostExpansion);
+        }
+        if current == "--no-open" {
+            saw_no_open = true;
         }
         if let Some(value) = flag_value(args, index, "--host") {
             if !is_allowed_bind_host(value) {
@@ -51,11 +61,13 @@ pub fn assert_safe_sidecar_args(args: &[String]) -> Result<(), OverlayError> {
         }
         index += 1;
     }
-    if saw_loopback_host {
-        Ok(())
-    } else {
-        Err(OverlayError::MissingLoopbackHost)
+    if !saw_loopback_host {
+        return Err(OverlayError::MissingLoopbackHost);
     }
+    if !saw_no_open {
+        return Err(OverlayError::MissingNoOpen);
+    }
+    Ok(())
 }
 
 fn flag_value<'a>(args: &'a [String], index: usize, flag: &str) -> Option<&'a str> {
@@ -86,6 +98,7 @@ mod tests {
                 "0",
                 "--host",
                 "127.0.0.1",
+                "--no-open",
             ])),
             Ok(())
         );
@@ -110,6 +123,10 @@ mod tests {
         assert_eq!(
             assert_safe_sidecar_args(&args(&["web", "--port", "0"])),
             Err(OverlayError::MissingLoopbackHost)
+        );
+        assert_eq!(
+            assert_safe_sidecar_args(&args(&["web", "--port", "0", "--host", "127.0.0.1"])),
+            Err(OverlayError::MissingNoOpen)
         );
     }
 }
